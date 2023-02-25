@@ -1,0 +1,785 @@
+<!doctype html>
+
+<!--
+Copyright (c) Meta Platforms, Inc. and affiliates.
+
+This source code is licensed under the MIT license found in the
+LICENSE file in the root directory of this source tree.
+-->
+
+<head>
+    <style>
+        .boxed {
+            border: 1px solid black;
+        }
+
+        .styleform label {
+            float: left;
+            margin: 5px 10px 5px 10px;
+        }
+
+        .styleform input {
+            margin: 5px 10px 5px 10px;
+        }
+
+        /* this gives space for the label on the left */
+        .styleform .clear {
+            clear: both;
+        }
+
+        /* prevent elements from stacking weirdly */
+    </style>
+    <title>Test Ultra low latency with WebCodecs + WebTransport PLAYER (by Jordi Cenzano)</title>
+</head>
+
+<body onload="initUI();">
+    <h1>Test Ultra low latency with Webcodecs + WebTransport: PLAYER</h1>
+    <h2>server -> Demux -> Decode -> Play</h2>
+    <div class="boxed">
+        <div class="styleform">
+            <form>
+                <h2>Data needed</h2>
+                <label id="wtDestData">WT server:<input id="wtServerUrl" type="text"
+                        value="https://localhost:4433/moqdelivery" size="64"></label>
+                <div class="clear"></div>
+                <label>Stream type:
+                    <select name="liveType" id="liveType">
+                        <option value="liveEdge" selected>Live edge</option>
+                        <option value="Rewind" disabled>Live rewind</option>
+                        <option value="VOD/Highlights" disabled>VOD / Highlights</option>
+                    </select>
+                </label>
+                <label>StreamID:<input id="downloadId" type="text" value="streamtest"></label>
+                <div class="clear"></div>
+                <label>Player buffer (ms):<input id="playerBufferMs" type="text" value="100"></label>
+                <label>(we will wait until buffer this amount to start playback)</label>
+                <div class="clear"></div>
+                <label>Audio jitter buffer buffer for this player (ms):<input id="audioJitterBufferMs" type="text"
+                        value="200"></label>
+                <label>Video jitter buffer buffer for this player (ms):<input id="videoJitterBufferMs" type="text"
+                        value="100"></label>
+                <div class="clear"></div>
+                <button id="btnStart" type="button" onclick="start();">Start</button>
+                <button id="btnStop" type="button" onclick="stop();" disabled>Stop</button>
+            </form>
+        </div>
+    </div>
+    <div class="boxed">
+        <canvas id="videoPlayer" width="320" height="160" style="border:1px solid"></canvas>
+    </div>
+    <div class="boxed">
+        <h2>Latency</h2>
+        <div class="styleform">
+            <label>Latency capture to renderer (ms):</label><input id="latencyAudioMs" type="text" value="" readonly>
+            <label>(only valid if encoder and player clocks are synchronized, or they are the same machine)</label>
+            <div class="clear"></div>
+        </div>
+    </div>
+    <div class="boxed">
+        <h2>Receiver demuxer</h2>
+        <div class="styleform">
+            <form>
+                <label>Current received audio TS(ms):</label><input id="currentChunkATS" type="text" value="" readonly>
+                <div class="clear"></div>
+                <label>Current received video TS(ms):</label><input id="currentChunkVTS" type="text" value="" readonly>
+                <div class="clear"></div>
+                <label>V-A diff(ms):</label><input id="currentChunkAVTSDiff" type="text" value="" readonly>
+                <div class="clear"></div>
+
+                <label>First audio TS(ms):</label><input id="firstChunkAts" type="text" value="" readonly>
+                <div class="clear"></div>
+                <label>First video TS(ms):</label><input id="firstChunkVts" type="text" value="" readonly>
+                <div class="clear"></div>
+                <label>V-A start diff(ms):</label><input id="firstChunkVADiff" type="text" value="" readonly>
+                <div class="clear"></div>
+
+                <label>Quic streams inflight:<input id="downloadStatsQuicInflight" type="text" value=""
+                        readonly></label>
+                <div class="clear"></div>
+            </form>
+        </div>
+    </div>
+    <div class="boxed">
+        <h2>Receiver dejitter</h2>
+        <div class="styleform">
+            <h3>Audio</h3>
+            <form>
+                <label>Buffer size:</label><input id="audioJitterSize" type="text" value="" readonly>
+                <div class="clear"></div>
+                <label>Gaps detected:</label><input id="audioJitterGaps" type="text" value="" readonly>
+                <div class="clear"></div>
+            </form>
+            <h3>Video</h3>
+            <form>
+                <label>Buffer size:</label><input id="videoJitterSize" type="text" value="" readonly>
+                <div class="clear"></div>
+                <label>Gaps detected:</label><input id="videoJitterGaps" type="text" value="" readonly>
+                <div class="clear"></div>
+            </form>
+        </div>
+    </div>
+    <div class="boxed">
+        <h2>Decoders</h2>
+        <div class="styleform">
+            <h3>Audio</h3>
+            <form>
+                <label>Current frame TS compensated (ms):</label><input id="currentFrameATS" type="text" value=""
+                    readonly>
+                <div class="clear"></div>
+                <label>Buffer size:</label><input id="currentDecoABuffer" type="text" value="" readonly>
+                <div class="clear"></div>
+                <label>Timestamp compensation(ms):</label><input id="currentDecoCompAOffset" type="text" value=""
+                    readonly>
+                <label>(The Audio decoder does NOT track timestamps (bummer), it just uses the 1st one sent and at every
+                    decoded audio sample adds 1/fs (so sample time), that means if we drop and audio packet those
+                    timestamps will be collapsed creating A/V out of sync. We compensate those lost packets with
+                    this)</label>
+                <div class="clear"></div>
+            </form>
+            <h3>Video</h3>
+            <form>
+                <label>Current frame TS(ms):</label><input id="currentFrameVTS" type="text" value="" readonly>
+                <div class="clear"></div>
+                <label>Buffer size:</label><input id="currentDecoVBuffer" type="text" value="" readonly>
+                <div class="clear"></div>
+            </form>
+            <label>V-A diff(ms):</label><input id="currentFrameAVTSDiff" type="text" value="" readonly>
+            <div class="clear"></div>
+        </div>
+    </div>
+    <div class="boxed">
+        <h2>Renderers</h2>
+        <div class="styleform">
+            <h3>Audio</h3>
+            <form>
+                <label>Current frame TS(ms):</label><input id="currentRendererATS" type="text" value="" readonly>
+                <div class="clear"></div>
+                <label>Buffer size:</label><input id="currentRendererABuffer" type="text" value="" size="48" readonly>
+                <div class="clear"></div>
+                <label>Total silence inserted (ms):</label><input id="currentRendererASilenceInserted" type="text"
+                    value="" readonly>
+                <div class="clear"></div>
+            </form>
+            <h3>Video</h3>
+            <form>
+                <label>Current frame TS(ms):</label><input id="currentRendererVTS" type="text" value="" readonly>
+                <div class="clear"></div>
+                <label>Buffer size:</label><input id="currentRendererVBuffer" type="text" value="" readonly>
+                <div class="clear"></div>
+                <label>Not printed frames:</label><input id="currentRendererVDiscarded" type="text" value="" readonly>
+                <div class="clear"></div>
+            </form>
+            <label>V-A diff(ms):</label><input id="currentRendererAVTSDiff" type="text" value="" readonly>
+            <div class="clear"></div>
+        </div>
+    </div>
+    <div class="boxed">
+        <h2>Dropped data (frames / chunks):</h2>
+        <ol id="droppedFrames"></ol>
+    </div>
+</body>
+<script src="./video_render_buffer.js"></script>
+<script src="./jitter_buffer.js"></script>
+<script src="../utils/time_checker.js"></script>
+<script src="audio_circular_buffer.js"></script>
+<script>
+    // Audio states (controls the player buffer)
+    const AUDIO_STOPPED = 0;
+    const AUDIO_PLAYING = 1;
+
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+
+    // Main vars
+    const VERBOSE = true;
+
+    // Minimum size in ms of audio circular buffer shared between main thread and audio renderer
+    const SHARED_CIRCULAR_BUFFER_MIN_MS = 5000;
+
+    const downloaderConfig = {
+        rewindTimeMs: 0, // We will request EDGE - this value
+
+        videoJitterBufferMs: 200,
+        audioJitterBufferMs: 200,
+
+        urlHostPort: '',
+        urlPath: '',
+    }
+
+    // We will start playback when this amount of data is in the audio rendered buffer
+    let playerBufferMs = 100;
+
+    // Current workers
+    let muxerDownloaderWorker = null;
+    let audioDecoderWorker = null;
+    let videoDecoderWorker = null;
+
+    // TS info
+    const timingInfo = {
+        muxer: {
+            currentAudioTs: -1,
+            currentVideoTs: -1,
+        },
+        decoder: {
+            currentAudioTs: -1,
+            currentVideoTs: -1,
+        },
+        renderer: {
+            // Estimated audio PTS (assumed PTS is microseconds, and audio and video uses same timescale)
+            currentAudioTS: -1,
+            currentVideoTS: -1,
+        }
+    };
+
+    const buffersInfo = {
+        decoder: {
+            audio: { size: -1, lengthMs: -1, timestampCompensationOffset: -1 },
+            video: { size: -1, lengthMs: -1 },
+        },
+        renderer: {
+            audio: { size: -1, lengthMs: -1, sizeMs: -1, state: AUDIO_STOPPED},
+            video: { size: -1, lengthMs: -1, },
+        },
+    }
+
+    // Audio renderer ----
+
+    // Audio vars
+    let audioCtx = null;
+    let sourceBufferAudioWorklet = null;
+    let systemAudioLatencyMs = 0;
+    let audioSharedBuffer = null;
+
+    // Video renderer ----
+
+    // Video player ctx
+    let videoPlayerCtx = null;
+
+    const currentVideoSize = {
+        width: -1,
+        height: -1
+    }
+
+    // Used to paint video frames
+    let animFrame = null;
+
+    // Last render time
+    let wcLastRender = 0;
+    const RENDER_VIDEO_EVERY_MS = 10;
+
+    let videoRendererBuffer = null;
+
+    // Jitter buffers
+    let wtVideoJitterBuffer = null;
+    let wtAudioJitterBuffer = null;
+
+    // Used to check latency
+    let audioTimeChecker = null;
+
+    // Read & parse QS data
+    const queryString = window.location.search;
+    console.log("Read querystring: " + queryString);
+    const qsParams = new URLSearchParams(queryString);
+
+    // Check setting to use SharedArrayBuffer
+    if (crossOriginIsolated) {
+        console.log("crossOriginIsolated enabled, we can use SharedArrayBuffer");
+    } else {
+        console.warn("crossOriginIsolated NOT enabled, we can NOT use SharedArrayBuffer");
+    }
+
+    function initUI() {
+        const qsHost = qsParams.get('host')
+        if (qsHost != undefined) {
+            document.getElementById("wtServerUrl").value = qsHost;
+        }
+    }
+
+    async function start() {
+        document.getElementById("btnStart").disabled = true
+        document.getElementById("btnStop").disabled = false
+
+        playerBufferMs = document.getElementById('playerBufferMs').value;
+
+        createVideoRendererBuffer();
+
+        createJitterBuffers();
+
+        createTimeChecker();
+
+        await initializeAudioContext();
+
+        createWorkers();
+
+        muxerDownloaderWorker.addEventListener('message', function (e) {
+            processWorkerMessage(e);
+        });
+        videoDecoderWorker.addEventListener('message', function (e) {
+            processWorkerMessage(e);
+        });
+        audioDecoderWorker.addEventListener('message', function (e) {
+            processWorkerMessage(e);
+        });
+
+        // Ini downloaderConfig
+        // Get url data
+        downloaderConfig.urlHostPort = document.getElementById('wtServerUrl').value;
+        downloaderConfig.urlPath = document.getElementById('downloadId').value;
+        // Default downloaderConfig.rewindTimeMs = document.getElementById('rewindTimeMs').value;
+        downloaderConfig.videoJitterBufferMs = document.getElementById('videoJitterBufferMs').value;
+        downloaderConfig.audioJitterBufferMs = document.getElementById('audioJitterBufferMs').value;
+
+        muxerDownloaderWorker.postMessage({ type: "downloadersendini", downloaderConfig: downloaderConfig });
+    }
+
+    async function stop() {
+        if (animFrame != null) {
+            cancelAnimationFrame(animFrame);
+        }
+
+        document.getElementById("btnStart").disabled = false
+        document.getElementById("btnStop").disabled = true
+
+        const stopMsg = { type: "stop" };
+        muxerDownloaderWorker.postMessage(stopMsg);
+        videoDecoderWorker.postMessage(stopMsg);
+        audioDecoderWorker.postMessage(stopMsg);
+
+        await audioCtx.close();
+        audioCtx = null;
+        sourceBufferAudioWorklet = null;
+        audioSharedBuffer.Clear();
+        audioSharedBuffer = null;
+
+        clearTimingInfo();
+
+        clearBufferInfo();
+
+        currentVideoSize.width = -1;
+        currentVideoSize.height = -1;
+
+        videoPlayerCtx = null;
+        animFrame = null;
+
+        clearJitterBuffers();
+        clearTimeChecker();
+        clearVideoRendererBuffer();
+    }
+
+    function createVideoRendererBuffer() {
+        videoRendererBuffer = new VideoRenderBuffer();
+    }
+    function clearVideoRendererBuffer() {
+        videoRendererBuffer = null;
+    }
+
+    function jitterAudioDroppedCallback(data) {
+        console.warn(`[AUDIO-JITTER] Dropped late audio frame. seqId: ${data.seqId}, currentSeqId:${data.firstBufferSeqId}`);
+    }
+    function jitterVideoDroppedCallback(data) {
+        console.warn(`[VIDEO-JITTER] Dropped late video frame. seqId: ${data.seqId}, currentSeqId:${data.firstBufferSeqId}`);
+    }
+
+    function createJitterBuffers() {
+        // Jitter buffers
+        wtVideoJitterBuffer = new JitterBuffer(document.getElementById('videoJitterBufferMs').value, jitterVideoDroppedCallback);
+        wtAudioJitterBuffer = new JitterBuffer(document.getElementById('audioJitterBufferMs').value, jitterAudioDroppedCallback);
+    }
+    function clearJitterBuffers() {
+        wtVideoJitterBuffer = null;
+        wtAudioJitterBuffer = null;
+    }
+
+    function createTimeChecker() {
+        audioTimeChecker = new TimeChecker("audio", returnWhen.LowerOrEqual);
+    }
+    function clearTimeChecker() {
+        audioTimeChecker = null;
+    }
+
+    function createWorkers() {
+        // Create a worker to download chunk
+        muxerDownloaderWorker = new Worker("./demuxer_downloader.js");
+        audioDecoderWorker = new Worker("./audio_decoder.js");
+        videoDecoderWorker = new Worker("./video_decoder.js");
+    }
+
+    function clearUI() {
+        document.getElementById('firstVts').value = "";
+        document.getElementById('firstAts').value = "";
+
+        document.getElementById('downloadStatsQuicInflight').value = "0";
+
+        document.getElementById('droppedFrames').innerHTML = '';
+    }
+
+    function updateDownloaderStatsUI(downloaderData) {
+        document.getElementById('downloadStatsQuicInflight').value = downloaderData.quicStreamsInFlight;
+    }
+
+    function clearTimingInfo() {
+        timingInfo.muxer.currentAudioTs = -1;
+        timingInfo.muxer.currentVideoTs = -1;
+
+        timingInfo.decoder.currentAudioTs = -1;
+        timingInfo.decoder.currentVideoTs = -1;
+
+        timingInfo.renderer.currentAudioTs = -1;
+        timingInfo.renderer.currentVideoTs = -1;
+    }
+
+    function clearBufferInfo() {
+        buffersInfo.decoder.audio.size = -1;
+        buffersInfo.decoder.audio.lengthMs = -1;
+        buffersInfo.decoder.video.size = -1;
+        buffersInfo.decoder.video.lengthMs = -1;
+
+        buffersInfo.renderer.audio.size = -1;
+        buffersInfo.renderer.audio.lengthMs = -1;
+        buffersInfo.renderer.audio.state = AUDIO_STOPPED;
+        buffersInfo.renderer.video.size = -1;
+        buffersInfo.renderer.video.lengthMs = -1;
+    }
+
+    async function initializeAudioContext() {
+        return new Promise((resolve, reject) => {
+            if (audioCtx == null) {
+                audioCtx = new AudioContext({ latencyHint: "interactive" });
+                audioCtx.transitioning = false;
+                // Add worklet
+                audioCtx.audioWorklet.addModule('source_buffer_worklet.js')
+                    .then(data => {
+                        sourceBufferAudioWorklet = new AudioWorkletNode(audioCtx, 'source-buffer');
+                        // AudioWorkletNode can be interoperable with other native AudioNodes.
+
+                        sourceBufferAudioWorklet.port.onmessage = (e) => {
+                            // Handling data from the processor.
+                            processWorkerMessage(e);
+                        };
+                        sourceBufferAudioWorklet.onprocessorerror = (event) => {
+                            console.error('Audio worklet error. Err: ' + JSON.stringify(event));
+                        };
+
+                        // Connect to audio renderer
+                        sourceBufferAudioWorklet.connect(audioCtx.destination);
+
+                        systemAudioLatencyMs = (audioCtx.outputLatency + audioCtx.baseLatency) * 1000;
+                        console.debug('Audio system latency (ms): ' + systemAudioLatencyMs);
+
+                        return resolve(null);
+                    });
+            }
+            else {
+                return resolve(null);
+            }
+        });
+    }
+
+    function updateJitterStatsUI(mediaType, data) {
+        let elementNameSize = 'videoJitterSize';
+        let elementNameGaps = 'videoJitterGaps';
+        if (mediaType === 'audio') {
+            elementNameSize = 'audioJitterSize';
+            elementNameGaps = 'audioJitterGaps';
+        }
+
+        document.getElementById(elementNameSize).value = data.size;
+        document.getElementById(elementNameGaps).value = `${data.numTotalGaps} (${data.numTotalLostStreams} streams lost)`;
+    }
+
+    function updateFirstChunkTSUI(mediaType, ts) {
+        let elementName = 'firstChunkVts';
+        if (mediaType === 'audio') {
+            elementName = 'firstChunkAts';
+        }
+        document.getElementById(elementName).value = (ts / 1000).toFixed(0);
+        document.getElementById('firstChunkVADiff').value = `${document.getElementById('firstChunkVts').value - document.getElementById('firstChunkAts').value} ms`;
+    }
+
+    function updateChunkTSUI(mediaType, ts) {
+        let elementName = 'currentChunkVTS';
+        if (mediaType === 'audio') {
+            elementName = 'currentChunkATS';
+        }
+        document.getElementById(elementName).value = (ts / 1000).toFixed(0);
+
+        document.getElementById('currentChunkAVTSDiff').value = `${document.getElementById('currentChunkVTS').value - document.getElementById('currentChunkATS').value} ms`;
+    }
+
+    function updateDecoderUI(mediaType, ts, bufferInfo) {
+        let elementTsName = 'currentFrameVTS';
+        let elementBufferName = 'currentDecoVBuffer';
+        let elementCompOffset = '';
+        if (mediaType === 'audio') {
+            elementTsName = 'currentFrameATS';
+            elementBufferName = 'currentDecoABuffer';
+            elementCompOffset = 'currentDecoCompAOffset';
+        }
+        document.getElementById(elementTsName).value = (ts / 1000).toFixed(0);
+        document.getElementById('currentFrameAVTSDiff').value = `${document.getElementById('currentFrameVTS').value - document.getElementById('currentFrameATS').value} ms`;
+
+        document.getElementById(elementBufferName).value = `${bufferInfo.size} (${bufferInfo.lengthMs.toFixed(0)} ms)`;
+
+        if (elementCompOffset != '') {
+            document.getElementById(elementCompOffset).value = `${(bufferInfo.timestampCompensationOffset / 1000).toFixed(0)} ms`;
+        }
+    }
+
+    function updateRendererAudioUI(ts, bufferInfo, totalSilenceInsertedMs) {
+        document.getElementById('currentRendererATS').value = (ts / 1000).toFixed(0);
+        document.getElementById('currentRendererAVTSDiff').value = `${document.getElementById('currentRendererVTS').value - document.getElementById('currentRendererATS').value} ms`;
+
+        document.getElementById('currentRendererABuffer').value = `${bufferInfo.size} samples (${bufferInfo.lengthMs.toFixed(0)} ms) - Max: ${buffersInfo.renderer.audio.sizeMs} ms`;
+        document.getElementById('currentRendererASilenceInserted').value = totalSilenceInsertedMs.toFixed(0);
+    }
+
+    function updateRendererVideoUI(ts, bufferInfo, totalDiscarded) {
+        document.getElementById('currentRendererVTS').value = (ts / 1000).toFixed(0);
+        document.getElementById('currentRendererAVTSDiff').value = `${document.getElementById('currentRendererVTS').value - document.getElementById('currentRendererATS').value} ms`;
+
+        document.getElementById('currentRendererVBuffer').value = `${bufferInfo.size} (${bufferInfo.lengthMs.toFixed(0)} ms)`;
+        document.getElementById('currentRendererVDiscarded').value = totalDiscarded.toFixed(0);
+    }
+
+    function updateLatencyUI(latencyMs) {
+        document.getElementById('latencyAudioMs').value = `${latencyMs.toFixed(0)} ms`;
+    }
+
+    function processWorkerMessage(e) {
+        // LOGGING
+        if ((e.data.type === "debug") && (VERBOSE === true)) {
+            // logging debug
+            console.debug(e.data.data);
+        } else if (e.data.type === "info") {
+            // logging info
+            console.log(e.data.data);
+        } else if (e.data.type === "error") {
+            // logging error
+            console.error(e.data.data);
+        } else if (e.data.type === "warning") {
+            // logging warn
+            console.warn(e.data.data);
+
+            // CHUNKS
+        } else if (e.data.type === "initvideochunk") {
+            const initData = e.data.data;
+            videoDecoderWorker.postMessage({ type: "initvideochunk", init: initData });
+
+        } else if (e.data.type === "initaudiochunk") {
+            const initData = e.data.data;
+            audioDecoderWorker.postMessage({ type: "initaudiochunk", init: initData });
+
+        } else if (e.data.type === "videochunk") {
+            const chunk = e.data.chunk;
+            const seqId = e.data.seqId;
+
+            const orderedVideoData = wtVideoJitterBuffer.AddItem(chunk, seqId);
+            if (orderedVideoData !== undefined) {
+                if (timingInfo.muxer.currentVideoTs < 0) {
+                    updateFirstChunkTSUI("video", orderedVideoData.chunk.timestamp);
+                }
+
+                // Download is sequential
+                if (orderedVideoData.isDisco) {
+                    console.warn(`VIDEO DISCO detected in seqId: ${orderedVideoData.seqId}`);
+                }
+                if (orderedVideoData.repeatedOrBackwards) {
+                    console.warn(`VIDEO Repeated or backwards chunk, discarding, seqId: ${orderedVideoData.seqId}`);
+                } else {
+                    timingInfo.muxer.currentVideoTs = orderedVideoData.chunk.timestamp;
+                    updateChunkTSUI('video', timingInfo.muxer.currentVideoTs);
+                    videoDecoderWorker.postMessage({ type: "videochunk", seqId: orderedVideoData.seqId, chunk: orderedVideoData.chunk, isDisco: orderedVideoData.isDisco });
+                }
+            }
+            updateJitterStatsUI("video", wtVideoJitterBuffer.GetStats());
+
+        } else if (e.data.type === "audiochunk") {
+            const chunk = e.data.chunk;
+            const seqId = e.data.seqId;
+            const captureClkms = e.data.captureClkms;
+
+            const orderedAudioData = wtAudioJitterBuffer.AddItem(chunk, seqId, captureClkms);
+            if (orderedAudioData !== undefined) {
+                if (timingInfo.muxer.currentAudioTs < 0) {
+                    updateFirstChunkTSUI("audio", orderedAudioData.chunk.timestamp);
+                }
+
+                // Download is sequential
+                if (orderedAudioData.isDisco) {
+                    console.warn(`AUDIO DISCO detected in seqId: ${orderedAudioData.seqId}`);
+                }
+                if (orderedAudioData.repeatedOrBackwards) {
+                    console.warn(`AUDIO Repeated or backwards chunk, discarding, seqId: ${orderedAudioData.seqId}`);
+                } else {
+                    // Add pts to wallClk info
+                    audioTimeChecker.AddItem({ ts: orderedAudioData.chunk.timestamp, clkms: orderedAudioData.extraData });
+
+                    timingInfo.muxer.currentAudioTs = orderedAudioData.chunk.timestamp;
+
+                    updateChunkTSUI('audio', timingInfo.muxer.currentAudioTs);
+                    audioDecoderWorker.postMessage({ type: "audiochunk", seqId: orderedAudioData.seqId, chunk: orderedAudioData.chunk, isDisco: orderedAudioData.isDisco });
+                }
+            }
+            updateJitterStatsUI("audio", wtAudioJitterBuffer.GetStats());
+
+            // FRAME
+        } else if (e.data.type === "aframe") {
+            const aFrame = e.data.frame;
+
+            // currentAudioTs needs to be compesated with GAPs more info in audio_decoder.js
+            timingInfo.decoder.currentAudioTs = aFrame.timestamp + e.data.timestampCompensationOffset;
+            buffersInfo.decoder.audio.timestampCompensationOffset = e.data.timestampCompensationOffset;
+
+            buffersInfo.decoder.audio.size = e.data.queueSize;
+            buffersInfo.decoder.audio.lengthMs = e.data.queueLengthMs;
+
+            updateDecoderUI('audio', timingInfo.decoder.currentAudioTs, buffersInfo.decoder.audio);
+
+            // If audioSharedBuffer not initialized and is in start (render) state -> Initialize
+            if (audioSharedBuffer === null && audioCtx != null) {
+                buffersInfo.renderer.audio.sizeMs = Math.max(SHARED_CIRCULAR_BUFFER_MIN_MS, playerBufferMs * 3)
+                const bufferSizeSamples = Math.floor(buffersInfo.renderer.audio.sizeMs / 1000) * aFrame.sampleRate;
+
+                audioSharedBuffer = new CicularAudioSharedBuffer();
+                audioSharedBuffer.Init(aFrame.numberOfChannels, bufferSizeSamples, audioCtx.sampleRate);
+                audioSharedBuffer.SetCallbacks(updateListDroppedFrame);
+
+                // Set the audio context sampling freq, and pass buffers
+                sourceBufferAudioWorklet.port.postMessage({ type: 'iniabuffer', config: { contextSampleFrequency: audioCtx.sampleRate, circularBufferSizeSamples: bufferSizeSamples, cicularAudioSharedBuffers: audioSharedBuffer.GetSharedBuffers(), sampleFrequency: aFrame.sampleRate } });
+            }
+
+            // Uses compensated TS
+            audioSharedBuffer.Add(aFrame, timingInfo.decoder.currentAudioTs);
+
+            if (animFrame === null) {
+                animFrame = requestAnimationFrame(audioTimestamps);
+            }
+        } else if (e.data.type === "vframe") {
+            const vFrame = e.data.frame;
+            timingInfo.decoder.currentVideoTs = vFrame.timestamp;
+
+            buffersInfo.decoder.video.size = e.data.queueSize;
+            buffersInfo.decoder.video.lengthMs = e.data.queueLengthMs;
+
+            updateDecoderUI('video', timingInfo.decoder.currentVideoTs, buffersInfo.decoder.video);
+
+            if (videoRendererBuffer.AddItem(vFrame) === false) {
+                console.warn("Dropped video frame because video renderer is full");
+                vFrame.close();
+            }
+            // Downloader STATS
+        } else if (e.data.type === "downloaderstats") {
+            const downloaderData = e.data.data;
+            updateDownloaderStatsUI(downloaderData);
+
+            // Dropped
+        } else if (e.data.type === "dropped") {
+            updateListDroppedFrame(e.data.data);
+
+            // UNKNOWN
+        } else {
+            console.error("unknown message: " + JSON.stringify(e.data));
+        }
+    }
+
+    function setVideoSize(vFrame) {
+        let needsSet = false;
+
+        if (vFrame.displayWidth != currentVideoSize.width) {
+            currentVideoSize.width = vFrame.displayWidth;
+            needsSet = true;
+        }
+        if (vFrame.displayHeight != currentVideoSize.height) {
+            currentVideoSize.height = vFrame.displayHeight;
+            needsSet = true;
+        }
+        if (needsSet) {
+            document.getElementById('videoPlayer').width = currentVideoSize.width;
+            document.getElementById('videoPlayer').height = currentVideoSize.height;
+
+            // Video player ctx
+            videoPlayerCtx = document.getElementById('videoPlayer').getContext('2d');
+        }
+    }
+
+    function updateListDroppedFrame(droppedFrameData) {
+        const list = document.getElementById('droppedFrames');
+
+        const clkms = droppedFrameData.clkms;
+        const ts = droppedFrameData.ts;
+        const msg = droppedFrameData.msg;
+        let seqId = droppedFrameData.msg;
+        if ('seqId' in droppedFrameData) {
+            seqId = droppedFrameData.seqId;
+        }
+
+        const str = new Date(clkms).toISOString() + " (" + ts + ")(" + seqId + ") " + msg;
+
+        const entry = document.createElement('li');
+        entry.appendChild(document.createTextNode(str));
+        list.appendChild(entry);
+    }
+
+    function updateAudioStats(data) {
+        // Audio render stats
+        timingInfo.renderer.currentAudioTS = data.currentTimestamp;
+
+        buffersInfo.renderer.audio.size = data.queueSize; // In samples
+        buffersInfo.renderer.audio.lengthMs = data.queueLengthMs; // In ms
+        if (data.isPlaying) {
+            buffersInfo.renderer.audio.state = AUDIO_PLAYING;
+        }
+        
+        updateRendererAudioUI(timingInfo.renderer.currentAudioTS, buffersInfo.renderer.audio, data.totalSilenceInsertedMs);
+    }
+
+    function updateAudioState() {
+        if (buffersInfo.renderer.audio.lengthMs >= playerBufferMs & buffersInfo.renderer.audio.state === AUDIO_STOPPED) {
+            audioSharedBuffer.Play();
+        }
+    }
+
+    function audioTimestamps(wcTimestamp) {
+        const wcInterval = wcTimestamp - wcLastRender;
+
+        if (audioSharedBuffer != null) {
+            updateAudioStats(audioSharedBuffer.GetStats());
+
+            updateAudioState();
+        }
+
+        // Update every 10ms
+        if ((audioCtx != null) && (wcInterval > RENDER_VIDEO_EVERY_MS)) {
+            wcLastRender = wcTimestamp;
+
+            if (videoRendererBuffer != null && timingInfo.renderer.currentAudioTS >= 0) {
+                // Assuming audioTS in microseconds
+                const compensatedAudioTS = Math.max(0, timingInfo.renderer.currentAudioTS - (systemAudioLatencyMs * 1000));
+                const retData = videoRendererBuffer.GetItemByTs(compensatedAudioTS);
+                if (retData.vFrame != null) {
+                    setVideoSize(retData.vFrame);
+                    videoPlayerCtx.drawImage(retData.vFrame, 0, 0, retData.vFrame.displayWidth, retData.vFrame.displayHeight);
+
+                    timingInfo.renderer.currentVideoTS = retData.vFrame.timestamp;
+                    buffersInfo.renderer.video.size = retData.queueSize;
+                    buffersInfo.renderer.video.lengthMs = retData.queueLengthMs;
+
+                    retData.vFrame.close();
+                } else {
+                    console.debug("NO FRAME to paint");
+                }
+
+                updateRendererVideoUI(timingInfo.renderer.currentVideoTS, buffersInfo.renderer.video, retData.totalDiscarded);
+            }
+
+            // For latency measure we need the data NOT compensated
+            if (audioTimeChecker != null) {
+                const frameClosestData = audioTimeChecker.GetItemByTs(timingInfo.renderer.currentAudioTS);
+                if (frameClosestData != undefined) {
+                    const currentLatencyMs = systemAudioLatencyMs + (Date.now() - frameClosestData.clkms);
+                    updateLatencyUI(currentLatencyMs);
+                }
+            }
+        }
+        animFrame = requestAnimationFrame(audioTimestamps);
+    }
+</script>
