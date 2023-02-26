@@ -376,7 +376,7 @@ async function createWebTransportRequestPromise(firstFrameClkms, mediaType, chun
         'Joc-First-Frame-Clk': firstFrameClkms, // Number
         'Joc-Uniq-Id': pId, // String
     };
-    
+
     // Encoder headers
     const headesUtf8bytes = new TextEncoder().encode(JSON.stringify(headers));
     const headesUtf8bytesLen = headesUtf8bytes.byteLength;

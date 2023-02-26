@@ -24,7 +24,7 @@ let urlHostPort = "";
 let urlPath = "";
 
 // WT object
-let wTtransport = null;
+let wtTransport = null;
 let quicStreamsInFlight = 0;
 
 function reportStats() {
@@ -48,12 +48,9 @@ self.addEventListener('message', async function (e) {
 
         // Abort and wait for all inflight requests
         try {
-            abortController.abort();
-            await Promise.all(getAllInflightRequestsArray());
-
-            if (wTtransport != null) {
-                await wTtransport.close();
-                wTtransport = null;
+            if (wtTransport != null) {
+                await wtTransport.close();
+                wtTransport = null;
             }
             quicStreamsInFlight = 0;
         } catch (err) {
@@ -109,13 +106,13 @@ async function startDownloadWebTransportChunks(quicStreamsExpirationTimeoutMs) {
     if (workerState === StateEnum.Stopped) {
         return
     }
-    if (wTtransport === null) {
+    if (wtTransport === null) {
         sendMessageToMain(WORKER_PREFIX, "error", "we can not start downloading data because WT is not initialized");
         return;
     }
 
     // Get stream
-    const incomingStream = wTtransport.incomingUnidirectionalStreams;
+    const incomingStream = wtTransport.incomingUnidirectionalStreams;
     const readableStream = incomingStream.getReader();
 
     while (workerState != StateEnum.Stopped) {
@@ -131,13 +128,13 @@ async function startDownloadWebTransportChunks(quicStreamsExpirationTimeoutMs) {
 }
 
 async function createWebTransportSession(url, rewindTimeMs, videoJitterBufferMs, audioJitterBufferMs) {
-    if (wTtransport != null) {
+    if (wtTransport != null) {
         return;
     }
-    wTtransport = new WebTransport(url + '?' + getUrlSegmentStr(rewindTimeMs, videoJitterBufferMs, audioJitterBufferMs));
-    await wTtransport.ready;
+    wtTransport = new WebTransport(url + '?' + getUrlSegmentStr(rewindTimeMs, videoJitterBufferMs, audioJitterBufferMs));
+    await wtTransport.ready;
 
-    wTtransport.closed
+    wtTransport.closed
         .then(() => {
             sendMessageToMain(WORKER_PREFIX, "info", "WT closed transport session");
         })
@@ -145,7 +142,7 @@ async function createWebTransportSession(url, rewindTimeMs, videoJitterBufferMs,
             sendMessageToMain(WORKER_PREFIX, "error", "WT error, closed transport. Err: " + error);
         });
 
-    sendMessageToMain(WORKER_PREFIX, "info", "WT transport session stablished");
+    sendMessageToMain(WORKER_PREFIX, "info", "WT transport session established");
 }
 
 function fetchWebTransportWithTimeout(stream, timeoutMs) {

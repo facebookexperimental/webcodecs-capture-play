@@ -35,6 +35,7 @@ LICENSE file in the root directory of this source tree.
 <body onload="initUI();">
     <h1>Test Ultra low latency with Webcodecs + WebTransport: PLAYER</h1>
     <h2>server -> Demux -> Decode -> Play</h2>
+    <label>(Encoder audio sampling frequency should be the same than audioContext (player) sampling frequency, this is almost guaranteed if you use same browser (computer) for encode and playback. The fix is simple but not done yet :-))</label>
     <div class="boxed">
         <div class="styleform">
             <form>
@@ -43,16 +44,22 @@ LICENSE file in the root directory of this source tree.
                         value="https://localhost:4433/moqdelivery" size="64"></label>
                 <div class="clear"></div>
                 <label>Stream type:
-                    <select name="liveType" id="liveType">
+                    <select name="liveType" id="liveType" onchange="liveTypeChangedUI(this)">
                         <option value="liveEdge" selected>Live edge</option>
-                        <option value="Rewind" disabled>Live rewind</option>
-                        <option value="VOD/Highlights" disabled>VOD / Highlights</option>
+                        <option value="Rewind">Live rewind</option>
+                        <option value="VOD/Highlights">VOD / Highlights</option>
                     </select>
                 </label>
                 <label>StreamID:<input id="downloadId" type="text" value="streamtest"></label>
                 <div class="clear"></div>
+                <label id="rewindTimeMsLabel" hidden>Rewind (ms):<input id="rewindTimeMs" type="text" value="10000"></label>
+                <label id="rewindTimeInfoLabel" hidden>(if rewind is bigger then live stream length it will play from beginning of live stream)</label>
+                <div class="clear"></div>
+                <label id="highlightStartAtLabel" hidden>Start at (local tz):<input id="highlightStartAgoMs" type="text" value="2023/03/01 12:00:00.000" size="32"></label>
+                <label id="highlightEndAtLabel" hidden>End at (local tz):<input id="highlightEndAt" type="text" value="2023/03/01 12:10:00.000" size="32"></label>
+                <div class="clear"></div>
                 <label>Player buffer (ms):<input id="playerBufferMs" type="text" value="100"></label>
-                <label>(we will wait until buffer this amount to start playback)</label>
+                <label>(it waits until audio buffers this amount to start playback)</label>
                 <div class="clear"></div>
                 <label>Audio jitter buffer buffer for this player (ms):<input id="audioJitterBufferMs" type="text"
                         value="200"></label>
@@ -294,6 +301,36 @@ LICENSE file in the root directory of this source tree.
         }
     }
 
+    function liveTypeChangedUI(e) {
+        const newSelected = e.value;
+        document.getElementById('rewindTimeMsLabel').hidden = true
+        document.getElementById('rewindTimeInfoLabel').hidden = true
+        document.getElementById('highlightStartAtLabel').hidden = true
+        document.getElementById('highlightEndAtLabel').hidden = true
+        
+
+        if (newSelected == "Rewind") {
+            document.getElementById('playerBufferMs').value = 500
+            document.getElementById('videoJitterBufferMs').value = 3000
+            document.getElementById('audioJitterBufferMs').value = 4000
+            document.getElementById('rewindTimeMsLabel').hidden = false
+            document.getElementById('rewindTimeInfoLabel').hidden = false
+        } else if (newSelected == "VOD/Highlights") {
+            // Highlight
+            document.getElementById('playerBufferMs').value = 500
+            document.getElementById('videoJitterBufferMs').value = 3000
+            document.getElementById('audioJitterBufferMs').value = 4000
+
+            document.getElementById('highlightStartAtLabel').hidden = false
+            document.getElementById('highlightEndAtLabel').hidden = false
+        } else {
+            // Edge
+            document.getElementById('playerBufferMs').value = 100
+            document.getElementById('videoJitterBufferMs').value = 100;
+            document.getElementById('audioJitterBufferMs').value = 200
+        }
+    }
+
     async function start() {
         document.getElementById("btnStart").disabled = true
         document.getElementById("btnStop").disabled = false
@@ -324,9 +361,17 @@ LICENSE file in the root directory of this source tree.
         // Get url data
         downloaderConfig.urlHostPort = document.getElementById('wtServerUrl').value;
         downloaderConfig.urlPath = document.getElementById('downloadId').value;
-        // Default downloaderConfig.rewindTimeMs = document.getElementById('rewindTimeMs').value;
-        downloaderConfig.videoJitterBufferMs = document.getElementById('videoJitterBufferMs').value;
-        downloaderConfig.audioJitterBufferMs = document.getElementById('audioJitterBufferMs').value;
+        if (document.getElementById('liveType').value === 'Rewind') {
+            downloaderConfig.rewindTimeMs = document.getElementById('rewindTimeMs').value;
+
+            // Bigger jitter buffer than rewind is useless
+            downloaderConfig.videoJitterBufferMs = Math.min(downloaderConfig.rewindTimeMs, document.getElementById('videoJitterBufferMs').value);
+            downloaderConfig.audioJitterBufferMs = Math.min(downloaderConfig.rewindTimeMs, document.getElementById('audioJitterBufferMs').value);
+        } else {
+            downloaderConfig.rewindTimeMs = 0;
+            downloaderConfig.videoJitterBufferMs = document.getElementById('videoJitterBufferMs').value;
+            downloaderConfig.audioJitterBufferMs = document.getElementById('audioJitterBufferMs').value;
+        }
 
         muxerDownloaderWorker.postMessage({ type: "downloadersendini", downloaderConfig: downloaderConfig });
     }
@@ -369,6 +414,9 @@ LICENSE file in the root directory of this source tree.
         videoRendererBuffer = new VideoRenderBuffer();
     }
     function clearVideoRendererBuffer() {
+        if (videoRendererBuffer != null) {
+            videoRendererBuffer.Clear();
+        }
         videoRendererBuffer = null;
     }
 
