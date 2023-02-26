@@ -378,17 +378,17 @@ async function createWebTransportRequestPromise(firstFrameClkms, mediaType, chun
     };
 
     // Encoder headers
-    const headesUtf8bytes = new TextEncoder().encode(JSON.stringify(headers));
-    const headesUtf8bytesLen = headesUtf8bytes.byteLength;
+    const headerUtf8bytes = new TextEncoder().encode(JSON.stringify(headers));
+    const headerUtf8bytesLen = headerUtf8bytes.byteLength;
 
     // Create client-initiated uni stream & writer
     const uniStream = await wTtransport.createUnidirectionalStream();
     const uniWriter = uniStream.getWriter();
 
     await uniWriter.ready;
-    uniWriter.write(convertToUint64BE(headesUtf8bytesLen));
+    uniWriter.write(convertToUint64BE(headerUtf8bytesLen));
     await uniWriter.ready;
-    uniWriter.write(headesUtf8bytes);
+    uniWriter.write(headerUtf8bytes);
     await uniWriter.ready;
 
     uniWriter.write(dataBytes);
