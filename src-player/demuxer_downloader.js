@@ -13,6 +13,9 @@ let workerState = StateEnum.Created;
 
 // Default values
 let rewindTimeMs = 0;
+let startAtEpochMs = undefined;
+let endAtEpochMs = undefined;
+
 let quicStreamsExpirationTimeoutMs = 7000;
 
 let videoJitterBufferMs = 200
@@ -83,8 +86,14 @@ self.addEventListener('message', async function (e) {
         if ('audioJitterBufferMs' in e.data.downloaderConfig) {
             audioJitterBufferMs = e.data.downloaderConfig.audioJitterBufferMs;
         }
+        if ('startAtEpochMs' in e.data.downloaderConfig) {
+            startAtEpochMs = e.data.downloaderConfig.startAtEpochMs;
+        }
+        if ('endAtEpochMs' in e.data.downloaderConfig) {
+            endAtEpochMs = e.data.downloaderConfig.endAtEpochMs;
+        }
         
-        await createWebTransportSession(urlHostPort + "/" + urlPath, rewindTimeMs, videoJitterBufferMs, audioJitterBufferMs);
+        await createWebTransportSession(urlHostPort + "/" + urlPath, rewindTimeMs, videoJitterBufferMs, audioJitterBufferMs, startAtEpochMs, endAtEpochMs);
 
         sendMessageToMain(WORKER_PREFIX, "info", "Initialized");
         workerState = StateEnum.Running;
@@ -93,12 +102,19 @@ self.addEventListener('message', async function (e) {
     }
 });
 
-function getUrlSegmentStr(bufferTargetMs, videoJitterBufferMs, audioJitterBufferMs) {
-    const params = new URLSearchParams({
+function getUrlSegmentStr(bufferTargetMs, videoJitterBufferMs, audioJitterBufferMs, startAtEpochMs, endAtEpochMs) {
+    obj = {
         old_ms: `${bufferTargetMs}`,
         vj_ms: `${videoJitterBufferMs}`,
-        aj_ms: `${audioJitterBufferMs}`,
-      });
+        aj_ms: `${audioJitterBufferMs}`
+    };
+    if (startAtEpochMs != undefined) {
+        obj.sa = startAtEpochMs
+    }
+    if (endAtEpochMs != undefined) {
+        obj.ea = endAtEpochMs
+    }
+    const params = new URLSearchParams(obj);
     return params.toString();
 }
 
@@ -127,11 +143,11 @@ async function startDownloadWebTransportChunks(quicStreamsExpirationTimeoutMs) {
     }
 }
 
-async function createWebTransportSession(url, rewindTimeMs, videoJitterBufferMs, audioJitterBufferMs) {
+async function createWebTransportSession(url, rewindTimeMs, videoJitterBufferMs, audioJitterBufferMs, startAtEpochMs, endAtEpochMs) {
     if (wtTransport != null) {
         return;
     }
-    wtTransport = new WebTransport(url + '?' + getUrlSegmentStr(rewindTimeMs, videoJitterBufferMs, audioJitterBufferMs));
+    wtTransport = new WebTransport(url + '?' + getUrlSegmentStr(rewindTimeMs, videoJitterBufferMs, audioJitterBufferMs, startAtEpochMs, endAtEpochMs));
     await wtTransport.ready;
 
     wtTransport.closed

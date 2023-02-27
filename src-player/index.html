@@ -35,7 +35,9 @@ LICENSE file in the root directory of this source tree.
 <body onload="initUI();">
     <h1>Test Ultra low latency with Webcodecs + WebTransport: PLAYER</h1>
     <h2>server -> Demux -> Decode -> Play</h2>
-    <label>(Encoder audio sampling frequency should be the same than audioContext (player) sampling frequency, this is almost guaranteed if you use same browser (computer) for encode and playback. The fix is simple but not done yet :-))</label>
+    <label>(Encoder audio sampling frequency should be the same than audioContext (player) sampling frequency, this is
+        almost guaranteed if you use same browser (computer) for encode and playback. The fix is simple but not done yet
+        :-))</label>
     <div class="boxed">
         <div class="styleform">
             <form>
@@ -47,16 +49,22 @@ LICENSE file in the root directory of this source tree.
                     <select name="liveType" id="liveType" onchange="liveTypeChangedUI(this)">
                         <option value="liveEdge" selected>Live edge</option>
                         <option value="Rewind">Live rewind</option>
-                        <option value="VOD/Highlights">VOD / Highlights</option>
+                        <option value="VOD">VOD / Highlights</option>
                     </select>
                 </label>
                 <label>StreamID:<input id="downloadId" type="text" value="streamtest"></label>
                 <div class="clear"></div>
-                <label id="rewindTimeMsLabel" hidden>Rewind (ms):<input id="rewindTimeMs" type="text" value="10000"></label>
-                <label id="rewindTimeInfoLabel" hidden>(if rewind is bigger then live stream length it will play from beginning of live stream)</label>
+                <label id="rewindTimeMsLabel" hidden>Rewind (ms):<input id="rewindTimeMs" type="text"
+                        value="10000"></label>
+                <label id="rewindTimeInfoLabel" hidden>(if rewind is bigger then live stream length it will play from
+                    beginning of live stream)</label>
                 <div class="clear"></div>
-                <label id="highlightStartAtLabel" hidden>Start at (local tz):<input id="highlightStartAgoMs" type="text" value="2023/03/01 12:00:00.000" size="32"></label>
-                <label id="highlightEndAtLabel" hidden>End at (local tz):<input id="highlightEndAt" type="text" value="2023/03/01 12:10:00.000" size="32"></label>
+                <label id="highlightStartAtLabel" hidden>Start at (ISO 8601):<input id="highlightStartAt" type="text"
+                        value="2023/03/01 12:00:00.000" size="32"></label>
+                <label id="highlightEndAtLabel" hidden>End at (ISO 8601):<input id="highlightEndAt" type="text"
+                        value="2023/03/01 12:10:00.000" size="32"></label>
+                <label id="highlightInfoLabel" hidden>(The requested segment need to be in the cache of the server, set
+                    the right expiration time in the encoder)</label>
                 <div class="clear"></div>
                 <label>Player buffer (ms):<input id="playerBufferMs" type="text" value="100"></label>
                 <label>(it waits until audio buffers this amount to start playback)</label>
@@ -203,7 +211,12 @@ LICENSE file in the root directory of this source tree.
     const SHARED_CIRCULAR_BUFFER_MIN_MS = 5000;
 
     const downloaderConfig = {
+        // Rewind
         rewindTimeMs: 0, // We will request EDGE - this value
+
+        // VOD
+        startAtEpochMs: undefined,
+        endAtEpochMs: undefined,
 
         videoJitterBufferMs: 200,
         audioJitterBufferMs: 200,
@@ -243,7 +256,7 @@ LICENSE file in the root directory of this source tree.
             video: { size: -1, lengthMs: -1 },
         },
         renderer: {
-            audio: { size: -1, lengthMs: -1, sizeMs: -1, state: AUDIO_STOPPED},
+            audio: { size: -1, lengthMs: -1, sizeMs: -1, state: AUDIO_STOPPED },
             video: { size: -1, lengthMs: -1, },
         },
     }
@@ -299,6 +312,9 @@ LICENSE file in the root directory of this source tree.
         if (qsHost != undefined) {
             document.getElementById("wtServerUrl").value = qsHost;
         }
+        const now = new Date().toISOString();
+        document.getElementById("highlightStartAt").value = now;
+        document.getElementById("highlightEndAt").value = now;
     }
 
     function liveTypeChangedUI(e) {
@@ -307,7 +323,7 @@ LICENSE file in the root directory of this source tree.
         document.getElementById('rewindTimeInfoLabel').hidden = true
         document.getElementById('highlightStartAtLabel').hidden = true
         document.getElementById('highlightEndAtLabel').hidden = true
-        
+        document.getElementById('highlightInfoLabel').hidden = true
 
         if (newSelected == "Rewind") {
             document.getElementById('playerBufferMs').value = 500
@@ -315,7 +331,7 @@ LICENSE file in the root directory of this source tree.
             document.getElementById('audioJitterBufferMs').value = 4000
             document.getElementById('rewindTimeMsLabel').hidden = false
             document.getElementById('rewindTimeInfoLabel').hidden = false
-        } else if (newSelected == "VOD/Highlights") {
+        } else if (newSelected == "VOD") {
             // Highlight
             document.getElementById('playerBufferMs').value = 500
             document.getElementById('videoJitterBufferMs').value = 3000
@@ -323,6 +339,8 @@ LICENSE file in the root directory of this source tree.
 
             document.getElementById('highlightStartAtLabel').hidden = false
             document.getElementById('highlightEndAtLabel').hidden = false
+            document.getElementById('highlightInfoLabel').hidden = false
+
         } else {
             // Edge
             document.getElementById('playerBufferMs').value = 100
@@ -361,14 +379,25 @@ LICENSE file in the root directory of this source tree.
         // Get url data
         downloaderConfig.urlHostPort = document.getElementById('wtServerUrl').value;
         downloaderConfig.urlPath = document.getElementById('downloadId').value;
-        if (document.getElementById('liveType').value === 'Rewind') {
+
+        downloaderConfig.rewindTimeMs = 0;
+        downloaderConfig.startAtEpochMs = undefined
+        downloaderConfig.endAtEpochMs = undefined
+
+        if (document.getElementById('liveType').value === "Rewind") {
             downloaderConfig.rewindTimeMs = document.getElementById('rewindTimeMs').value;
 
             // Bigger jitter buffer than rewind is useless
             downloaderConfig.videoJitterBufferMs = Math.min(downloaderConfig.rewindTimeMs, document.getElementById('videoJitterBufferMs').value);
             downloaderConfig.audioJitterBufferMs = Math.min(downloaderConfig.rewindTimeMs, document.getElementById('audioJitterBufferMs').value);
+        } if (document.getElementById('liveType').value === "VOD") {
+            downloaderConfig.startAtEpochMs = Date.parse(document.getElementById('highlightStartAt').value);
+            downloaderConfig.endAtEpochMs = Date.parse(document.getElementById('highlightEndAt').value);
+            durMs = downloaderConfig.endAtEpochMs - downloaderConfig.startAtEpochMs;
+
+            downloaderConfig.videoJitterBufferMs = Math.min(durMs, document.getElementById('videoJitterBufferMs').value);
+            downloaderConfig.audioJitterBufferMs = Math.min(durMs, document.getElementById('audioJitterBufferMs').value);
         } else {
-            downloaderConfig.rewindTimeMs = 0;
             downloaderConfig.videoJitterBufferMs = document.getElementById('videoJitterBufferMs').value;
             downloaderConfig.audioJitterBufferMs = document.getElementById('audioJitterBufferMs').value;
         }
@@ -776,7 +805,7 @@ LICENSE file in the root directory of this source tree.
         if (data.isPlaying) {
             buffersInfo.renderer.audio.state = AUDIO_PLAYING;
         }
-        
+
         updateRendererAudioUI(timingInfo.renderer.currentAudioTS, buffersInfo.renderer.audio, data.totalSilenceInsertedMs);
     }
 
