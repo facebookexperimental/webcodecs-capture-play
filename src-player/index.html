@@ -107,10 +107,6 @@ LICENSE file in the root directory of this source tree.
                 <div class="clear"></div>
                 <label>V-A start diff(ms):</label><input id="firstChunkVADiff" type="text" value="" readonly>
                 <div class="clear"></div>
-
-                <label>Quic streams inflight:<input id="downloadStatsQuicInflight" type="text" value=""
-                        readonly></label>
-                <div class="clear"></div>
             </form>
         </div>
     </div>
@@ -484,13 +480,7 @@ LICENSE file in the root directory of this source tree.
         document.getElementById('firstVts').value = "";
         document.getElementById('firstAts').value = "";
 
-        document.getElementById('downloadStatsQuicInflight').value = "0";
-
         document.getElementById('droppedFrames').innerHTML = '';
-    }
-
-    function updateDownloaderStatsUI(downloaderData) {
-        document.getElementById('downloadStatsQuicInflight').value = downloaderData.quicStreamsInFlight;
     }
 
     function clearTimingInfo() {
@@ -746,7 +736,6 @@ LICENSE file in the root directory of this source tree.
             // Downloader STATS
         } else if (e.data.type === "downloaderstats") {
             const downloaderData = e.data.data;
-            updateDownloaderStatsUI(downloaderData);
 
             // Dropped
         } else if (e.data.type === "dropped") {

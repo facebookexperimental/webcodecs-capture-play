@@ -28,10 +28,9 @@ let urlPath = "";
 
 // WT object
 let wtTransport = null;
-let quicStreamsInFlight = 0;
 
 function reportStats() {
-    sendMessageToMain(WORKER_PREFIX, "downloaderstats", { clkms: Date.now(), quicStreamsInFlight: quicStreamsInFlight});
+    sendMessageToMain(WORKER_PREFIX, "downloaderstats", { clkms: Date.now()});
 }
 
 // Main listener
@@ -55,7 +54,6 @@ self.addEventListener('message', async function (e) {
                 await wtTransport.close();
                 wtTransport = null;
             }
-            quicStreamsInFlight = 0;
         } catch (err) {
             // Expected to finish some promises with abort error
             // The abort "errors" are already sent to main "thead" by sendMessageToMain inside the promise
@@ -175,7 +173,6 @@ function fetchWebTransportWithTimeout(stream, timeoutMs) {
 
 async function fetchWebTransportStream(stream, timeoutMs) {
     const startTime = Date.now();
-    quicStreamsInFlight++;
 
     try {
         const streamReader = stream.getReader();
@@ -269,8 +266,5 @@ async function fetchWebTransportStream(stream, timeoutMs) {
         sendMessageToMain(WORKER_PREFIX, "error", "WT request. Err: " + error);
 
         return error;
-    }
-    finally {
-        quicStreamsInFlight--;
     }
 }

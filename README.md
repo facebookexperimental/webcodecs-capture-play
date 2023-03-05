@@ -1,5 +1,4 @@
 # webcodecs-capture-play
-
 This project is provides a minimal implementation (inside the browser) of a live video and audio encoder and video / audio player. The goal is to provide a minimal live platform implementation that helps learning low latency trade offs, and facilitates low latency experimentation.
 
 We also used it to start experimenting in media over QUIC transport (learn more about it in [moq IETF workgroup](https://datatracker.ietf.org/doc/charter-ietf-moq/))
@@ -24,7 +23,6 @@ Fig3: Encoder block diagram
 Note: We have used [WebTransport](https://www.w3.org/TR/webtransport/), so the underlying transport is QUIC, QUIC streams to be more accurate
 
 ### Config params
-
 Video encoding config:
 ```
 // Video encoder config
@@ -211,7 +209,6 @@ Buffer that stores video decoded frames
 Note: Encoder and Player clock have to be in sync for this metric to be accurate. You can use same computer as encoder & player, then metric should be pretty accurate
 
 ### Config params
-
 ```
 const downloaderConfig = {
     targetBufferS: 1, // Target player buffer size, we will request EDGE - this value
@@ -222,7 +219,6 @@ const downloaderConfig = {
 ```
 
 # Testing
-
 - Follow the installation instructions of [go-media-webtransport-server](https://github.com/jordicenzano/go-media-webtransport-server)
 - Clone this repo
 ```
@@ -261,5 +257,4 @@ Fig6: Player block diagram
 - TODO:???
 
 # License
-
 webcodecs-capture-play is released under the [MIT License](https://github.com/facebookincubator/rush/blob/master/LICENSE).
