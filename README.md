@@ -6,7 +6,7 @@ We also used it to start experimenting in media over QUIC transport (learn more 
 ![Main block diagram](./pics/Wecodecs-basic-block-diagram.png)
 Fig1: Main block diagram
 
-For the server/relay side we have used [go-media-webtransport-server](https://github.com/jordicenzano/go-media-webtransport-server), a server that we developed media serving purposes using QUIC as underlying transport
+For the server/relay side we have used [go-media-webtransport-server](https://github.com/facebookexperimental/go-media-webtransport-server), a server that we developed media serving purposes using QUIC as underlying transport
 
 ## Packager
 We use a very experimental, flexible, and NON optimal packager that we created for specifically for this, see fig2
