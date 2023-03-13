@@ -315,39 +315,39 @@ LICENSE file in the root directory of this source tree.
 
     function liveTypeChangedUI(e) {
         const newSelected = e.value;
-        document.getElementById('rewindTimeMsLabel').hidden = true
-        document.getElementById('rewindTimeInfoLabel').hidden = true
-        document.getElementById('highlightStartAtLabel').hidden = true
-        document.getElementById('highlightEndAtLabel').hidden = true
-        document.getElementById('highlightInfoLabel').hidden = true
+        document.getElementById('rewindTimeMsLabel').hidden = true;
+        document.getElementById('rewindTimeInfoLabel').hidden = true;
+        document.getElementById('highlightStartAtLabel').hidden = true;
+        document.getElementById('highlightEndAtLabel').hidden = true;
+        document.getElementById('highlightInfoLabel').hidden = true;
 
         if (newSelected == "Rewind") {
-            document.getElementById('playerBufferMs').value = 500
-            document.getElementById('videoJitterBufferMs').value = 3000
-            document.getElementById('audioJitterBufferMs').value = 4000
-            document.getElementById('rewindTimeMsLabel').hidden = false
-            document.getElementById('rewindTimeInfoLabel').hidden = false
+            document.getElementById('playerBufferMs').value = 500;
+            document.getElementById('videoJitterBufferMs').value = 3000;
+            document.getElementById('audioJitterBufferMs').value = 4000;
+            document.getElementById('rewindTimeMsLabel').hidden = false;
+            document.getElementById('rewindTimeInfoLabel').hidden = false;
         } else if (newSelected == "VOD") {
             // Highlight
-            document.getElementById('playerBufferMs').value = 500
-            document.getElementById('videoJitterBufferMs').value = 3000
-            document.getElementById('audioJitterBufferMs').value = 4000
+            document.getElementById('playerBufferMs').value = 500;
+            document.getElementById('videoJitterBufferMs').value = 3000;
+            document.getElementById('audioJitterBufferMs').value = 4000;
 
-            document.getElementById('highlightStartAtLabel').hidden = false
-            document.getElementById('highlightEndAtLabel').hidden = false
-            document.getElementById('highlightInfoLabel').hidden = false
+            document.getElementById('highlightStartAtLabel').hidden = false;
+            document.getElementById('highlightEndAtLabel').hidden = false;
+            document.getElementById('highlightInfoLabel').hidden = false;
 
         } else {
             // Edge
-            document.getElementById('playerBufferMs').value = 100
+            document.getElementById('playerBufferMs').value = 100;
             document.getElementById('videoJitterBufferMs').value = 100;
-            document.getElementById('audioJitterBufferMs').value = 200
+            document.getElementById('audioJitterBufferMs').value = 200;
         }
     }
 
     async function start() {
-        document.getElementById("btnStart").disabled = true
-        document.getElementById("btnStop").disabled = false
+        document.getElementById("btnStart").disabled = true;
+        document.getElementById("btnStop").disabled = false;
 
         playerBufferMs = document.getElementById('playerBufferMs').value;
 
@@ -387,8 +387,17 @@ LICENSE file in the root directory of this source tree.
             downloaderConfig.videoJitterBufferMs = Math.min(downloaderConfig.rewindTimeMs, document.getElementById('videoJitterBufferMs').value);
             downloaderConfig.audioJitterBufferMs = Math.min(downloaderConfig.rewindTimeMs, document.getElementById('audioJitterBufferMs').value);
         } if (document.getElementById('liveType').value === "VOD") {
+            const errMsg = validateHighlightTime(document.getElementById('highlightStartAt').value, document.getElementById('highlightEndAt').value);
+            if (errMsg != undefined) {
+                alert(errMsg);
+                // Start did NOT go through
+                document.getElementById("btnStart").disabled = false;
+                document.getElementById("btnStop").disabled = true;
+                return;
+            }
             downloaderConfig.startAtEpochMs = Date.parse(document.getElementById('highlightStartAt').value);
             downloaderConfig.endAtEpochMs = Date.parse(document.getElementById('highlightEndAt').value);
+
             durMs = downloaderConfig.endAtEpochMs - downloaderConfig.startAtEpochMs;
 
             downloaderConfig.videoJitterBufferMs = Math.min(durMs, document.getElementById('videoJitterBufferMs').value);
@@ -505,6 +514,21 @@ LICENSE file in the root directory of this source tree.
         buffersInfo.renderer.audio.state = AUDIO_STOPPED;
         buffersInfo.renderer.video.size = -1;
         buffersInfo.renderer.video.lengthMs = -1;
+    }
+
+    function validateHighlightTime(startDateStr, endDateStr) {
+        const startDate = Date.parse(startDateStr);
+        if (isNaN(startDate)) {
+            return "Start date for VOD / Highlight could NOT be parsed";
+        }
+        const endDate = Date.parse(endDateStr);
+        if (isNaN(endDate)) {
+            return "End date for VOD / Highlight could NOT be parsed";
+        }
+        if (startDate >= endDate) {
+            return "Start date is bigger or equal as end date for VOD / Highlight";
+        }
+        return undefined;
     }
 
     async function initializeAudioContext() {
