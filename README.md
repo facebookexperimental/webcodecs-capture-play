@@ -251,6 +251,7 @@ Fig6: Player block diagram
 - Player: Accept different sampling frequency than the audio renderer
 - Player/server: Cancel QUIC stream if arrives after jitter buffer
 - Encoder: Cancel QUIC stream after some reasonable time
+- Accelerate playback if we are over latency budget
 - All:
   - Accept B frames (DTS)
   - Accept multi track
