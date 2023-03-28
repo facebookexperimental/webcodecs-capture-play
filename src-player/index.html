@@ -66,6 +66,13 @@ LICENSE file in the root directory of this source tree.
                 <label id="highlightInfoLabel" hidden>(The requested segment need to be in the cache of the server, set
                     the right expiration time in the encoder)</label>
                 <div class="clear"></div>
+                <label>Packager type:
+                    <select name="packagerType" id="packagerType">
+                        <option value="v2" selected>v2 - Binary</option>
+                        <option value="v1">v1 - JSON</option>
+                    </select>
+                </label>
+                <div class="clear"></div>
                 <label>Player buffer (ms):<input id="playerBufferMs" type="text" value="100"></label>
                 <label>(it waits until audio buffers this amount to start playback)</label>
                 <div class="clear"></div>
@@ -379,6 +386,7 @@ LICENSE file in the root directory of this source tree.
         downloaderConfig.rewindTimeMs = 0;
         downloaderConfig.startAtEpochMs = undefined
         downloaderConfig.endAtEpochMs = undefined
+        downloaderConfig.packagerVersion = document.getElementById('packagerType').value;
 
         if (document.getElementById('liveType').value === "Rewind") {
             downloaderConfig.rewindTimeMs = document.getElementById('rewindTimeMs').value;

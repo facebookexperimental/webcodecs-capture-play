@@ -10,6 +10,8 @@ const WORKER_PREFIX = "[MUXER-SEND]";
 const VIDEO_PENALTY_SENT_FRAMES = 5;
 
 importScripts('utils.js');
+importScripts('../utils/packager_version.js');
+importScripts('../packager/media_packager_header.js');
 
 let chunks_delivered = 0;
 let workerState = StateEnum.Created;
@@ -51,6 +53,14 @@ let isVideoPresent = false;
 
 // WebTransport data
 let wTtransport = null;
+
+// Default packager
+let packagerVersion = PackagerVersion.V2Binary;
+
+// Packager efficiency
+let efficiencyAvg = 0;
+let totalPackagerBytesSent = 0;
+let totalPayloadBytesSent = 0;
 
 // Debugging data 
 let totalAudioSkippedDur = 0;
@@ -136,6 +146,7 @@ self.addEventListener('message', async function (e) {
             sendMessageToMain(WORKER_PREFIX, "error", "received ini message in wrong state. State: " + workerState);
             return;
         }
+
         if ('audioMaxMaxQueueSizeMs' in e.data.muxerSenderConfig) {
             audioMaxMaxQueueSizeMs = e.data.muxerSenderConfig.audioMaxMaxQueueSizeMs;
         }
@@ -157,7 +168,12 @@ self.addEventListener('message', async function (e) {
         if ('maxAgeChunkS' in e.data.muxerSenderConfig) {
             maxAgeChunkS = e.data.muxerSenderConfig.maxAgeChunkS;
         }
-        
+        if ('packagerVersion' in e.data.muxerSenderConfig) {
+            if (e.data.muxerSenderConfig.packagerVersion == "v1") {
+                packagerVersion = PackagerVersion.V1Json;
+            }
+        }
+
         await createWebTransportSession(urlHostPort + "/" + urlPath);
         sendMessageToMain(WORKER_PREFIX, "info", "Initialized");
 
@@ -231,7 +247,7 @@ self.addEventListener('message', async function (e) {
     sendData();
 
     // Report stats
-    self.postMessage({ type: "sendstats", clkms: Date.now(), inFlightAudioReqNum: getInflightRequestsLength(inFlightRequests['audio']), inFlightVideoReqNum: getInflightRequestsLength(inFlightRequests['video']), audioQueueStats: getQueueStats(queue['audio']), videoQueueStats: getQueueStats(queue['video']) });
+    self.postMessage({ type: "sendstats", clkms: Date.now(), inFlightAudioReqNum: getInflightRequestsLength(inFlightRequests['audio']), inFlightVideoReqNum: getInflightRequestsLength(inFlightRequests['video']), audioQueueStats: getQueueStats(queue['audio']), videoQueueStats: getQueueStats(queue['video']), efficiency: efficiencyAvg });
 
     return;
 });
@@ -248,16 +264,16 @@ function getAllInflightRequestsArray() {
 }
 
 function sendData() {
-    sendDataFromQueue(queue['audio'], inFlightRequests['audio'], maxFlightRequests['audio']);
-    sendDataFromQueue(queue['video'], inFlightRequests['video'], maxFlightRequests['video']);
+    sendDataFromQueue(queue['audio'], inFlightRequests['audio'], maxFlightRequests['audio'], packagerVersion);
+    sendDataFromQueue(queue['video'], inFlightRequests['video'], maxFlightRequests['video'], packagerVersion);
 }
 
-function sendDataFromQueue(queue, inFlightRequests, maxFlightRequests) {
+function sendDataFromQueue(queue, inFlightRequests, maxFlightRequests, packagerVersion) {
     const ret = [];
     while ((queue.length > 0) && (getInflightRequestsLength(inFlightRequests) < maxFlightRequests)) {
         const chunkData = queue.shift();
         if (chunkData !== null) {
-            const requests = createRequests(chunkData);
+            const requests = createRequests(chunkData, packagerVersion);
             requests.forEach(p => {
                 ret.push(p);
             });
@@ -266,7 +282,7 @@ function sendDataFromQueue(queue, inFlightRequests, maxFlightRequests) {
     return ret;
 }
 
-function createRequests(chunkData) {
+function createRequests(chunkData, packagerVersion) {
     const ret = [];
     const mediaType = chunkData.mediaType;
     const seqId = chunkData.seqId;
@@ -283,7 +299,7 @@ function createRequests(chunkData) {
     // codec specific binary configuration. (VideoDecoderConfig.description).
     if (metadata != undefined) {
         let pIni = null;
-        pIni = createWebTransportRequestPromise(firstFrameClkms, mediaType, "init", compesatedTs, estimatedDuration, -1, Number.MAX_SAFE_INTEGER, metadata);
+        pIni = createWebTransportRequestPromise(firstFrameClkms, mediaType, "init", compesatedTs, estimatedDuration, -1, Number.MAX_SAFE_INTEGER, metadata, packagerVersion);
         ret.push(pIni);
     }
 
@@ -292,7 +308,7 @@ function createRequests(chunkData) {
     chunk.copyTo(chunkDataBuffer);
 
     let pChunk = null;
-    pChunk = createWebTransportRequestPromise(firstFrameClkms, mediaType, chunk.type, compesatedTs, estimatedDuration, seqId, maxAgeChunkS, chunkDataBuffer);
+    pChunk = createWebTransportRequestPromise(firstFrameClkms, mediaType, chunk.type, compesatedTs, estimatedDuration, seqId, maxAgeChunkS, chunkDataBuffer, packagerVersion);
     ret.push(pChunk);
 
     return ret;
@@ -340,7 +356,7 @@ function convertToUint64BE(n) {
     return b;
 }
 
-async function createWebTransportRequestPromise(firstFrameClkms, mediaType, chunkType, timestamp, duration, seqId, maxAgeChunkS, dataBytes) {
+async function createWebTransportRequestPromise(firstFrameClkms, mediaType, chunkType, timestamp, duration, seqId, maxAgeChunkS, dataBytes, packagerVersion) {
     if (wTtransport === null) {
         sendMessageToMain(WORKER_PREFIX, "dropped", { clkms: Date.now(), ts: timestamp, msg: "Dropped " + mediaType + "chunk because server error response" });
         sendMessageToMain(WORKER_PREFIX, "error", "request not send because transport is NOT open. For " + mediaType + "-" + seqId);
@@ -348,7 +364,7 @@ async function createWebTransportRequestPromise(firstFrameClkms, mediaType, chun
     }
 
     // Comment this. Useful to test A.V sync functionality in server & player
-    
+
     //if (mediaType === "audio" && seqId > 0 && seqId%20 === 0) {
     /*if (mediaType === "audio" && seqId > 0 && seqId > 100 && seqId < 120) {
         totalAudioSkippedDur += duration;
@@ -365,43 +381,33 @@ async function createWebTransportRequestPromise(firstFrameClkms, mediaType, chun
 
     // Generate a unique id in the stream
     const pId = btoa(`${mediaType}-${seqId}-${timestamp}- ${Math.floor(Math.random * 100000)}`);
-
-    const headers = {
-        'Cache-Control': `max-age=${maxAgeChunkS}`, // String
-        'Joc-Media-Type': mediaType, // String
-        'Joc-Timestamp': timestamp, // Number
-        'Joc-Duration': duration, // Number
-        'Joc-Chunk-Type': chunkType, // String
-        'Joc-Seq-Id': seqId, // Number
-        'Joc-First-Frame-Clk': firstFrameClkms, // Number
-        'Joc-Uniq-Id': pId, // String
-    };
-
-    // Encoder headers
-    const headerUtf8bytes = new TextEncoder().encode(JSON.stringify(headers));
-    const headerUtf8bytesLen = headerUtf8bytes.byteLength;
+    const packager = new MediaPackagerHeader();
+    packager.SetData(maxAgeChunkS, mediaType, timestamp, duration, chunkType, seqId, firstFrameClkms, pId, dataBytes);
 
     // Create client-initiated uni stream & writer
     const uniStream = await wTtransport.createUnidirectionalStream();
     const uniWriter = uniStream.getWriter();
-
-    await uniWriter.ready;
-    uniWriter.write(convertToUint64BE(headerUtf8bytesLen));
-    await uniWriter.ready;
-    uniWriter.write(headerUtf8bytes);
     await uniWriter.ready;
 
-    uniWriter.write(dataBytes);
+    uniWriter.write(packager.ToBytes(packagerVersion));
 
     const p = uniWriter.close();
     p.id = pId;
 
     addToInflight(mediaType, p);
+
+    // Calculate efficiency avg accumulatively
+    const pkgInfo = packager.GetPackagerInfo();
+
+    totalPackagerBytesSent += pkgInfo.packagerBytes;
+    totalPayloadBytesSent += pkgInfo.payloadBytes;
     
+    efficiencyAvg = totalPayloadBytesSent / (totalPackagerBytesSent + totalPayloadBytesSent);
+
     p
         //.then(x => new Promise(resolve => setTimeout(() => resolve(x), 200))) // Debug
         .then(val => {
-            sendMessageToMain(WORKER_PREFIX, "debug", "sent: 200. For " + mediaType + "-" + seqId + "-" + timestamp);
+            sendMessageToMain(WORKER_PREFIX, "debug", "sent: 200. For " + mediaType + "-" + seqId + "-" + timestamp + "-" + duration + "-" + chunkType + "-" + firstFrameClkms);
             removeFromInflight(mediaType, pId);
 
             sendData();

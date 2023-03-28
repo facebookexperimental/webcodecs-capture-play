@@ -46,6 +46,13 @@ LICENSE file in the root directory of this source tree.
                 <label>StreamID:<input id="uploadId" type="text" value="202112241726"></label><label>Old
                     StreamID:</label><input id="oldUploadId" type="text" value="-" readonly>
                 <div class="clear"></div>
+                <label>Packager type:
+                    <select name="packagerType" id="packagerType">
+                        <option value="v2" selected>v2 - Binary</option>
+                        <option value="v1">v1 - JSON</option>
+                    </select>
+                </label>
+                <div class="clear"></div>
                 <label>Max audio sending buffer allowed (ms):<input id="maxAudioBufferMs" type="text"
                         value="300"></label>
                 <div class="clear"></div>
@@ -90,6 +97,13 @@ LICENSE file in the root directory of this source tree.
     <div class="boxed">
         <h2>Muxer sender</h2>
         <div>
+            <h3>Packager Efficiency</h3>
+            <div class="styleform">
+                <form>
+                    <label>Efficiency:<input id="uploadStatsPackagerEfficiency" type="text" value="" readonly></label>
+                    <div class="clear"></div>
+                </form>
+            </div>
             <h3>Stats audio queue (1st priori)</h3>
             <div class="styleform">
                 <form>
@@ -215,7 +229,7 @@ LICENSE file in the root directory of this source tree.
     const queryString = window.location.search;
     console.log("Read querystring: " + queryString);
     const qsParams = new URLSearchParams(queryString);
-    
+
     function createWorkers() {
         // Create a new workers for video / audio frames capture
         vStreamWorker = new Worker("./v_capture.js");
@@ -235,6 +249,8 @@ LICENSE file in the root directory of this source tree.
 
         document.getElementById('uploadStatsAudioInflight').value = "0";
         document.getElementById('uploadStatsVideoInflight').value = "0";
+
+        document.getElementById('uploadStatsPackagerEfficiency').value = "0";
 
         document.getElementById('firstVts').value = "";
         document.getElementById('firstAts').value = "";
@@ -381,7 +397,7 @@ LICENSE file in the root directory of this source tree.
 
             // CHUNKS STATS
         } else if (e.data.type === "sendstats") {
-            updateUploadStats(currentAudioTs, currentVideoTs, e.data.inFlightAudioReqNum, e.data.inFlightVideoReqNum, e.data.audioQueueStats, e.data.videoQueueStats);
+            updateUploadStats(currentAudioTs, currentVideoTs, e.data.inFlightAudioReqNum, e.data.inFlightVideoReqNum, e.data.audioQueueStats, e.data.videoQueueStats, e.data.efficiency);
 
             // UNKNOWN
         } else {
@@ -389,12 +405,14 @@ LICENSE file in the root directory of this source tree.
         }
     }
 
-    function updateUploadStats(currentAudioTs, currentVideoTs, inFlightAudioReqNum, inFlightVideoReqNum, audioQueueStats, videoQueueStats) {
+    function updateUploadStats(currentAudioTs, currentVideoTs, inFlightAudioReqNum, inFlightVideoReqNum, audioQueueStats, videoQueueStats, packagerEfficiency) {
         document.getElementById('uploadStatsAudioQueue').value = `${audioQueueStats.numElements} : ${audioQueueStats.lengthMs} ms  (${returnMax('audioQueueStats.lengthMs', audioQueueStats.lengthMs)})`
         document.getElementById('uploadStatsVideoQueue').value = `${videoQueueStats.numElements} : ${videoQueueStats.lengthMs} ms (${returnMax('videoQueueStats.lengthMs', videoQueueStats.lengthMs)})`
 
         document.getElementById('uploadStatsAudioInflight').value = `${inFlightAudioReqNum} (${returnMax('inFlightAudioReqNum', inFlightAudioReqNum)})`;
         document.getElementById('uploadStatsVideoInflight').value = `${inFlightVideoReqNum} (${returnMax('inFlightVideoReqNum', inFlightVideoReqNum)})`;
+
+        document.getElementById('uploadStatsPackagerEfficiency').value = `${(packagerEfficiency * 100).toFixed(2)}%`;
     }
 
     function updateDroppedFrame(droppedFrameData) {
@@ -504,6 +522,8 @@ LICENSE file in the root directory of this source tree.
                 // Get url data
                 muxerSenderConfig.urlHostPort = document.getElementById('wtServerUrl').value;
                 muxerSenderConfig.urlPath = document.getElementById('uploadId').value;
+                muxerSenderConfig.packagerVersion = document.getElementById('packagerType').value;
+                
                 // Get Max-age data
                 muxerSenderConfig.maxAgeChunkS = parseInt(document.getElementById('uploadMaxAge').value);
                 // Get buffers info
@@ -514,7 +534,7 @@ LICENSE file in the root directory of this source tree.
                 muxerSenderConfig.maxInFlightVideoRequests = parseInt(document.getElementById('maxInflightVideoRequests').value);
 
                 // Initialize muxer - sender
-                muxerSenderWorker.postMessage({ type: "muxersendini", muxerSenderConfig: muxerSenderConfig});
+                muxerSenderWorker.postMessage({ type: "muxersendini", muxerSenderConfig: muxerSenderConfig });
 
                 // Transfer the readable stream to the worker.
                 vStreamWorker.postMessage({ type: "stream", vStream: vFrameStream }, [vFrameStream]);

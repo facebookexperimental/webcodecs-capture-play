@@ -8,6 +8,8 @@ LICENSE file in the root directory of this source tree.
 const WORKER_PREFIX = "[DOWNLOADER]";
 
 importScripts('utils.js');
+importScripts('../utils/packager_version.js');
+importScripts('../packager/media_packager_header.js');
 
 let workerState = StateEnum.Created;
 
@@ -29,8 +31,11 @@ let urlPath = "";
 // WT object
 let wtTransport = null;
 
+// Default packager
+let packagerVersion = PackagerVersion.V2Binary;
+
 function reportStats() {
-    sendMessageToMain(WORKER_PREFIX, "downloaderstats", { clkms: Date.now()});
+    sendMessageToMain(WORKER_PREFIX, "downloaderstats", { clkms: Date.now() });
 }
 
 // Main listener
@@ -66,7 +71,7 @@ self.addEventListener('message', async function (e) {
         }
         if (!('urlHostPort' in e.data.downloaderConfig) || !('urlPath' in e.data.downloaderConfig)) {
             sendMessageToMain(WORKER_PREFIX, "error", "We need host, streamId to start playback");
-            return 
+            return
         }
 
         if ('rewindTimeMs' in e.data.downloaderConfig) {
@@ -90,8 +95,13 @@ self.addEventListener('message', async function (e) {
         if ('endAtEpochMs' in e.data.downloaderConfig) {
             endAtEpochMs = e.data.downloaderConfig.endAtEpochMs;
         }
-        
-        await createWebTransportSession(urlHostPort + "/" + urlPath, rewindTimeMs, videoJitterBufferMs, audioJitterBufferMs, startAtEpochMs, endAtEpochMs);
+        if ('packagerVersion' in e.data.downloaderConfig) {
+            if (e.data.downloaderConfig.packagerVersion == "v1") {
+                packagerVersion = PackagerVersion.V1Json;
+            }
+        }
+
+        await createWebTransportSession(urlHostPort + "/" + urlPath, rewindTimeMs, videoJitterBufferMs, audioJitterBufferMs, startAtEpochMs, endAtEpochMs, packagerVersion);
 
         sendMessageToMain(WORKER_PREFIX, "info", "Initialized");
         workerState = StateEnum.Running;
@@ -100,7 +110,7 @@ self.addEventListener('message', async function (e) {
     }
 });
 
-function getUrlSegmentStr(bufferTargetMs, videoJitterBufferMs, audioJitterBufferMs, startAtEpochMs, endAtEpochMs) {
+function getUrlSegmentStr(bufferTargetMs, videoJitterBufferMs, audioJitterBufferMs, startAtEpochMs, endAtEpochMs, packagerVersion) {
     obj = {
         old_ms: `${bufferTargetMs}`,
         vj_ms: `${videoJitterBufferMs}`,
@@ -111,6 +121,9 @@ function getUrlSegmentStr(bufferTargetMs, videoJitterBufferMs, audioJitterBuffer
     }
     if (endAtEpochMs != undefined) {
         obj.ea = endAtEpochMs
+    }
+    if (packagerVersion != undefined && packagerVersion.name != undefined) {
+        obj.pk = packagerVersion.name
     }
     const params = new URLSearchParams(obj);
     return params.toString();
@@ -141,11 +154,11 @@ async function startDownloadWebTransportChunks(quicStreamsExpirationTimeoutMs) {
     }
 }
 
-async function createWebTransportSession(url, rewindTimeMs, videoJitterBufferMs, audioJitterBufferMs, startAtEpochMs, endAtEpochMs) {
+async function createWebTransportSession(url, rewindTimeMs, videoJitterBufferMs, audioJitterBufferMs, startAtEpochMs, endAtEpochMs, packagerVersion) {
     if (wtTransport != null) {
         return;
     }
-    wtTransport = new WebTransport(url + '?' + getUrlSegmentStr(rewindTimeMs, videoJitterBufferMs, audioJitterBufferMs, startAtEpochMs, endAtEpochMs));
+    wtTransport = new WebTransport(url + '?' + getUrlSegmentStr(rewindTimeMs, videoJitterBufferMs, audioJitterBufferMs, startAtEpochMs, endAtEpochMs, packagerVersion));
     await wtTransport.ready;
 
     wtTransport.closed
@@ -209,54 +222,45 @@ async function fetchWebTransportStream(stream, timeoutMs) {
         // Careful here we lose 64 range
         const headerSize = Number(new DataView(chunkBytes.buffer).getBigUint64(0, false));
         if (headerSize + 8 > chunkBytes.byteLength) {
-            throw "No enought bytes in the stream to parse header";
+            throw "No enough bytes in the stream to parse header";
         }
-        const headerJson = new TextDecoder().decode(chunkBytes.slice(8, headerSize + 8))
-        const header = JSON.parse(headerJson);
 
-        // Get header data
-        let seqId = -1;
-        if (header['Joc-Seq-Id'] !== null) {
-            seqId = header['Joc-Seq-Id'];
-        }
-        const timestamp = parseInt(header['Joc-Timestamp']);
-        const type = header['Joc-Chunk-Type']; // Init, IDR, delta
-        const mediaType = header['Joc-Media-Type']; // audio, video
-        const duration = header['Joc-Duration'];
-        const captureClkms = header['Joc-First-Frame-Clk'];
+        const packager = new MediaPackagerHeader();
+        packager.SetDataFromBytes(chunkBytes.slice(8, headerSize + 8));
+        const header = packager.GetData();
 
-        if ((type === undefined) || (mediaType === undefined)) {
-            throw "Corrupted headers, we not NOT parse the data, headers: " + JSON.stringify(header);
+        if ((header.chunkType === undefined) || (header.mediaType === undefined)) {
+            throw "Corrupted headers, we can NOT parse the data, headers: " + JSON.stringify(header);
         }
 
         // Create chunk from payload
         let chunk = null;
-        if (type === "init") {
-            self.postMessage({ type: "init" + mediaType + "chunk", clkms: Date.now(), captureClkms: captureClkms, data: chunkBytes.slice(headerSize + 8) });
+        if (header.chunkType === "init") {
+            self.postMessage({ type: "init" + header.mediaType + "chunk", clkms: Date.now(), captureClkms: header.firstFrameClkms, data: chunkBytes.slice(headerSize + 8) });
         } else {
-            if (mediaType === "audio") {
+            if (header.mediaType === "audio") {
                 chunk = new EncodedAudioChunk({
-                    timestamp: timestamp,
-                    type: type,
+                    timestamp: header.timestamp,
+                    type: header.chunkType,
                     data: chunkBytes.slice(headerSize + 8),
-                    duration: duration
+                    duration: header.duration
                 });
-            } else if (mediaType === "video") {
+            } else if (header.mediaType === "video") {
                 chunk = new EncodedVideoChunk({
-                    timestamp: timestamp,
-                    type: type,
+                    timestamp: header.timestamp,
+                    type: header.chunkType,
                     data: chunkBytes.slice(headerSize + 8),
-                    duration: duration
+                    duration: header.duration
                 });
             }
-            self.postMessage({ type: mediaType + "chunk", clkms: Date.now(), captureClkms: captureClkms, seqId: seqId, chunk: chunk });
+            self.postMessage({ type: header.mediaType + "chunk", clkms: Date.now(), captureClkms: header.firstFrameClkms, seqId: header.seqId, chunk: chunk });
         }
 
         const reqLatencyMs = Date.now() - startTime;
-        if (reqLatencyMs > (duration / 1000)) {
-            sendMessageToMain(WORKER_PREFIX, "warning", "response: 200, Latency(ms): " + reqLatencyMs + ", Frame dur(ms): " + duration / 1000 + ". mediaType: " + mediaType + ", seqId: " + seqId + ", ts: " + timestamp);
+        if (reqLatencyMs > (header.duration / 1000)) {
+            sendMessageToMain(WORKER_PREFIX, "warning", "response: 200, Latency(ms): " + reqLatencyMs + ", Frame dur(ms): " + header.duration / 1000 + ". mediaType: " + header.mediaType + ", seqId: " + header.seqId + ", ts: " + header.timestamp);
         } else {
-            sendMessageToMain(WORKER_PREFIX, "debug", "response: 200, Latency(ms): " + reqLatencyMs + ", Frame dur(ms): " + duration / 1000 + ". mediaType: " + mediaType + ", seqId:" + seqId + ", ts: " + timestamp);
+            sendMessageToMain(WORKER_PREFIX, "debug", "response: 200, Latency(ms): " + reqLatencyMs + ", Frame dur(ms): " + header.duration / 1000 + ". mediaType: " + header.mediaType + ", seqId:" + header.seqId + ", ts: " + header.timestamp);
         }
 
         return null;

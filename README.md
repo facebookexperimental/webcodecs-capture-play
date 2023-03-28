@@ -9,10 +9,22 @@ Fig1: Main block diagram
 For the server/relay side we have used [go-media-webtransport-server](https://github.com/facebookexperimental/go-media-webtransport-server), a server that we developed media serving purposes using QUIC as underlying transport
 
 ## Packager
-We use a very experimental, flexible, and NON optimal packager that we created for specifically for this, see fig2
 
-![Media packager](./pics/WebCodecs-Packager.png)
-Fig2: Media packager
+### V2 Binary (legacy)
+This is a more refined packager than v1, it keeps same functionality bit is more optimal in terms of efficiency and also keeping a good trade off with flexibility. 
+
+The efficiency of this packager is ~91%, meaning 91% of the bytes sent to transport are payload bytes (1Mbps video and 32Kbps audio)
+
+![Media packager v2](./pics/WebCodecs-Packager-v2.png)
+Fig2.1: Media packager v2
+
+### V1 JSON (legacy)
+We use a very experimental, flexible, and NON optimal packager that we created for specifically for this, see fig2.2
+
+The efficiency of this packager is ~70%, meaning 70% of the bytes sent to transport are payload bytes (1Mbps video and 32Kbps audio)
+
+![Media packager v1](./pics/WebCodecs-Packager-v1.png)
+Fig2.2: Media packager v1
 
 ## Encoder
 The encoder is based on [Webcodecs](https://developer.mozilla.org/en-US/docs/Web/API/WebCodecs_API), and [AudioContext](https://developer.mozilla.org/en-US/docs/Web/API/AudioContext), see the block diagram in fig3
@@ -259,3 +271,10 @@ Fig6: Player block diagram
 
 # License
 webcodecs-capture-play is released under the [MIT License](https://github.com/facebookincubator/rush/blob/master/LICENSE).
+
+
+TODO: 
+X - Surface packager selection & dedault to Bin
+- Implement delivery side
+- Update readme
+- Add overflow protection
