@@ -271,10 +271,3 @@ Fig6: Player block diagram
 
 # License
 webcodecs-capture-play is released under the [MIT License](https://github.com/facebookincubator/rush/blob/master/LICENSE).
-
-
-TODO: 
-X - Surface packager selection & dedault to Bin
-- Implement delivery side
-- Update readme
-- Add overflow protection
