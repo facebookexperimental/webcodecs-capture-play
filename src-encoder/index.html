@@ -100,7 +100,7 @@ LICENSE file in the root directory of this source tree.
             <h3>Packager Efficiency</h3>
             <div class="styleform">
                 <form>
-                    <label>Efficiency:<input id="uploadStatsPackagerEfficiency" type="text" value="" readonly></label>
+                    <label>Efficiency (%):<input id="uploadStatsPackagerEfficiency" type="text" value="" readonly size="30"></label>
                     <div class="clear"></div>
                 </form>
             </div>
@@ -397,7 +397,7 @@ LICENSE file in the root directory of this source tree.
 
             // CHUNKS STATS
         } else if (e.data.type === "sendstats") {
-            updateUploadStats(currentAudioTs, currentVideoTs, e.data.inFlightAudioReqNum, e.data.inFlightVideoReqNum, e.data.audioQueueStats, e.data.videoQueueStats, e.data.efficiency);
+            updateUploadStats(currentAudioTs, currentVideoTs, e.data.inFlightAudioReqNum, e.data.inFlightVideoReqNum, e.data.audioQueueStats, e.data.videoQueueStats, e.data.efficiencyData);
 
             // UNKNOWN
         } else {
@@ -405,14 +405,18 @@ LICENSE file in the root directory of this source tree.
         }
     }
 
-    function updateUploadStats(currentAudioTs, currentVideoTs, inFlightAudioReqNum, inFlightVideoReqNum, audioQueueStats, videoQueueStats, packagerEfficiency) {
+    function updateUploadStats(currentAudioTs, currentVideoTs, inFlightAudioReqNum, inFlightVideoReqNum, audioQueueStats, videoQueueStats, packagerEfficiencyData) {
         document.getElementById('uploadStatsAudioQueue').value = `${audioQueueStats.numElements} : ${audioQueueStats.lengthMs} ms  (${returnMax('audioQueueStats.lengthMs', audioQueueStats.lengthMs)})`
         document.getElementById('uploadStatsVideoQueue').value = `${videoQueueStats.numElements} : ${videoQueueStats.lengthMs} ms (${returnMax('videoQueueStats.lengthMs', videoQueueStats.lengthMs)})`
 
         document.getElementById('uploadStatsAudioInflight').value = `${inFlightAudioReqNum} (${returnMax('inFlightAudioReqNum', inFlightAudioReqNum)})`;
         document.getElementById('uploadStatsVideoInflight').value = `${inFlightVideoReqNum} (${returnMax('inFlightVideoReqNum', inFlightVideoReqNum)})`;
 
-        document.getElementById('uploadStatsPackagerEfficiency').value = `${(packagerEfficiency * 100).toFixed(2)}%`;
+        const effVideo = ((packagerEfficiencyData.video.totalPayloadBytesSent / (packagerEfficiencyData.video.totalPackagerBytesSent + packagerEfficiencyData.video.totalPayloadBytesSent)) * 100).toFixed(2);
+        const effAudio = ((packagerEfficiencyData.audio.totalPayloadBytesSent / (packagerEfficiencyData.audio.totalPackagerBytesSent + packagerEfficiencyData.audio.totalPayloadBytesSent)) * 100).toFixed(2);
+        const effTotal = (((packagerEfficiencyData.video.totalPayloadBytesSent + packagerEfficiencyData.audio.totalPayloadBytesSent) / (packagerEfficiencyData.video.totalPackagerBytesSent + packagerEfficiencyData.audio.totalPackagerBytesSent + packagerEfficiencyData.video.totalPayloadBytesSent + packagerEfficiencyData.audio.totalPayloadBytesSent)) * 100).toFixed(2);
+        const effStr = `${effTotal} (v: ${effVideo}, a: ${effAudio})`;
+        document.getElementById('uploadStatsPackagerEfficiency').value =effStr;
     }
 
     function updateDroppedFrame(droppedFrameData) {

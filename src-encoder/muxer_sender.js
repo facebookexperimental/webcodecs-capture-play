@@ -58,9 +58,16 @@ let wTtransport = null;
 let packagerVersion = PackagerVersion.V2Binary;
 
 // Packager efficiency
-let efficiencyAvg = 0;
-let totalPackagerBytesSent = 0;
-let totalPayloadBytesSent = 0;
+let efficiencyData = {
+    audio: {
+        totalPackagerBytesSent: 0,
+        totalPayloadBytesSent: 0,
+    },
+    video: {
+        totalPackagerBytesSent: 0,
+        totalPayloadBytesSent: 0,
+    }
+}
 
 // Debugging data 
 let totalAudioSkippedDur = 0;
@@ -247,7 +254,7 @@ self.addEventListener('message', async function (e) {
     sendData();
 
     // Report stats
-    self.postMessage({ type: "sendstats", clkms: Date.now(), inFlightAudioReqNum: getInflightRequestsLength(inFlightRequests['audio']), inFlightVideoReqNum: getInflightRequestsLength(inFlightRequests['video']), audioQueueStats: getQueueStats(queue['audio']), videoQueueStats: getQueueStats(queue['video']), efficiency: efficiencyAvg });
+    self.postMessage({ type: "sendstats", clkms: Date.now(), inFlightAudioReqNum: getInflightRequestsLength(inFlightRequests['audio']), inFlightVideoReqNum: getInflightRequestsLength(inFlightRequests['video']), audioQueueStats: getQueueStats(queue['audio']), videoQueueStats: getQueueStats(queue['video']), efficiencyData: efficiencyData });
 
     return;
 });
@@ -399,11 +406,14 @@ async function createWebTransportRequestPromise(firstFrameClkms, mediaType, chun
     // Calculate efficiency avg accumulatively
     const pkgInfo = packager.GetPackagerInfo();
 
-    totalPackagerBytesSent += pkgInfo.packagerBytes;
-    totalPayloadBytesSent += pkgInfo.payloadBytes;
+    if (mediaType == "video") {
+        efficiencyData.video.totalPackagerBytesSent += pkgInfo.packagerBytes;
+        efficiencyData.video.totalPayloadBytesSent += pkgInfo.payloadBytes;
+    } else if (mediaType == "audio") {
+        efficiencyData.audio.totalPackagerBytesSent += pkgInfo.packagerBytes;
+        efficiencyData.audio.totalPayloadBytesSent += pkgInfo.payloadBytes;
+    }
     
-    efficiencyAvg = totalPayloadBytesSent / (totalPackagerBytesSent + totalPayloadBytesSent);
-
     p
         //.then(x => new Promise(resolve => setTimeout(() => resolve(x), 200))) // Debug
         .then(val => {
