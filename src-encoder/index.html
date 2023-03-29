@@ -53,15 +53,9 @@ LICENSE file in the root directory of this source tree.
                     </select>
                 </label>
                 <div class="clear"></div>
-                <label>Max audio sending buffer allowed (ms):<input id="maxAudioBufferMs" type="text"
-                        value="300"></label>
+                <label>Max inflight audio requests:<input id="maxInflightAudioRequests" type="text" value="60"></label>
                 <div class="clear"></div>
-                <label>Max video sending buffer allowed (ms):<input id="maxVideoBufferMs" type="text"
-                        value="150"></label>
-                <div class="clear"></div>
-                <label>Max inflight audio requests:<input id="maxInflightAudioRequests" type="text" value="100"></label>
-                <div class="clear"></div>
-                <label>Max inflight video requests:<input id="maxInflightVideoRequests" type="text" value="50"></label>
+                <label>Max inflight video requests:<input id="maxInflightVideoRequests" type="text" value="39"></label>
                 <div class="clear"></div>
                 <label>Expiration time for media chunks (except init) (in secs):<input id="uploadMaxAge" type="text"
                         value="120"></label>
@@ -101,20 +95,6 @@ LICENSE file in the root directory of this source tree.
             <div class="styleform">
                 <form>
                     <label>Efficiency (%):<input id="uploadStatsPackagerEfficiency" type="text" value="" readonly size="30"></label>
-                    <div class="clear"></div>
-                </form>
-            </div>
-            <h3>Stats audio queue (1st priori)</h3>
-            <div class="styleform">
-                <form>
-                    <label>Length:<input id="uploadStatsAudioQueue" type="text" value="" readonly></label>
-                    <div class="clear"></div>
-                </form>
-            </div>
-            <h3>Stats video queue (2nd priori)</h3>
-            <div class="styleform">
-                <form>
-                    <label>Length:<input id="uploadStatsVideoQueue" type="text" value="" readonly></label>
                     <div class="clear"></div>
                 </form>
             </div>
@@ -244,9 +224,6 @@ LICENSE file in the root directory of this source tree.
     }
 
     function clearUI() {
-        document.getElementById('uploadStatsAudioQueue').value = "";
-        document.getElementById('uploadStatsVideoQueue').value = "";
-
         document.getElementById('uploadStatsAudioInflight').value = "0";
         document.getElementById('uploadStatsVideoInflight').value = "0";
 
@@ -397,7 +374,7 @@ LICENSE file in the root directory of this source tree.
 
             // CHUNKS STATS
         } else if (e.data.type === "sendstats") {
-            updateUploadStats(currentAudioTs, currentVideoTs, e.data.inFlightAudioReqNum, e.data.inFlightVideoReqNum, e.data.audioQueueStats, e.data.videoQueueStats, e.data.efficiencyData);
+            updateUploadStats(currentAudioTs, currentVideoTs, e.data.inFlightAudioReqNum, e.data.inFlightVideoReqNum, e.data.efficiencyData);
 
             // UNKNOWN
         } else {
@@ -405,10 +382,7 @@ LICENSE file in the root directory of this source tree.
         }
     }
 
-    function updateUploadStats(currentAudioTs, currentVideoTs, inFlightAudioReqNum, inFlightVideoReqNum, audioQueueStats, videoQueueStats, packagerEfficiencyData) {
-        document.getElementById('uploadStatsAudioQueue').value = `${audioQueueStats.numElements} : ${audioQueueStats.lengthMs} ms  (${returnMax('audioQueueStats.lengthMs', audioQueueStats.lengthMs)})`
-        document.getElementById('uploadStatsVideoQueue').value = `${videoQueueStats.numElements} : ${videoQueueStats.lengthMs} ms (${returnMax('videoQueueStats.lengthMs', videoQueueStats.lengthMs)})`
-
+    function updateUploadStats(currentAudioTs, currentVideoTs, inFlightAudioReqNum, inFlightVideoReqNum, packagerEfficiencyData) {
         document.getElementById('uploadStatsAudioInflight').value = `${inFlightAudioReqNum} (${returnMax('inFlightAudioReqNum', inFlightAudioReqNum)})`;
         document.getElementById('uploadStatsVideoInflight').value = `${inFlightVideoReqNum} (${returnMax('inFlightVideoReqNum', inFlightVideoReqNum)})`;
 
@@ -530,9 +504,6 @@ LICENSE file in the root directory of this source tree.
                 
                 // Get Max-age data
                 muxerSenderConfig.maxAgeChunkS = parseInt(document.getElementById('uploadMaxAge').value);
-                // Get buffers info
-                muxerSenderConfig.audioMaxMaxQueueSizeMs = parseInt(document.getElementById('maxAudioBufferMs').value);
-                muxerSenderConfig.videoMaxMaxQueueSizeMs = parseInt(document.getElementById('maxVideoBufferMs').value);
                 //Get max Inflight requests
                 muxerSenderConfig.maxInFlightAudioRequests = parseInt(document.getElementById('maxInflightAudioRequests').value);
                 muxerSenderConfig.maxInFlightVideoRequests = parseInt(document.getElementById('maxInflightVideoRequests').value);
