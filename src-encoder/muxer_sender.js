@@ -265,44 +265,49 @@ async function createWebTransportRequestPromise(firstFrameClkms, mediaType, chun
     }*/
 
     // Generate a unique id in the stream
-    const pId = btoa(`${mediaType}-${seqId}-${timestamp}- ${Math.floor(Math.random * 100000)}`);
-    const packager = new MediaPackagerHeader();
-    packager.SetData(maxAgeChunkS, mediaType, timestamp, duration, chunkType, seqId, firstFrameClkms, pId, dataBytes);
+    try {
+        const pId = btoa(`${mediaType}-${seqId}-${timestamp}- ${Math.floor(Math.random * 100000)}`);
+        const packager = new MediaPackagerHeader();
+        packager.SetData(maxAgeChunkS, mediaType, timestamp, duration, chunkType, seqId, firstFrameClkms, pId, dataBytes);
 
-    // Create client-initiated uni stream & writer
-    const uniStream = await wTtransport.createUnidirectionalStream();
-    const uniWriter = uniStream.getWriter();
-    await uniWriter.ready;
+        // Create client-initiated uni stream & writer
+        const uniStream = await wTtransport.createUnidirectionalStream();
+        const uniWriter = uniStream.getWriter();
+        await uniWriter.ready;
 
-    uniWriter.write(packager.ToBytes(packagerVersion));
+        uniWriter.write(packager.ToBytes(packagerVersion));
 
-    const p = uniWriter.close();
-    p.id = pId;
+        const p = uniWriter.close();
+        p.id = pId;
 
-    addToInflight(mediaType, p);
+        addToInflight(mediaType, p);
 
-    // Calculate efficiency avg accumulatively
-    const pkgInfo = packager.GetPackagerInfo();
+        // Calculate efficiency avg accumulatively
+        const pkgInfo = packager.GetPackagerInfo();
 
-    if (mediaType == "video") {
-        efficiencyData.video.totalPackagerBytesSent += pkgInfo.packagerBytes;
-        efficiencyData.video.totalPayloadBytesSent += pkgInfo.payloadBytes;
-    } else if (mediaType == "audio") {
-        efficiencyData.audio.totalPackagerBytesSent += pkgInfo.packagerBytes;
-        efficiencyData.audio.totalPayloadBytesSent += pkgInfo.payloadBytes;
+        if (mediaType == "video") {
+            efficiencyData.video.totalPackagerBytesSent += pkgInfo.packagerBytes;
+            efficiencyData.video.totalPayloadBytesSent += pkgInfo.payloadBytes;
+        } else if (mediaType == "audio") {
+            efficiencyData.audio.totalPackagerBytesSent += pkgInfo.packagerBytes;
+            efficiencyData.audio.totalPayloadBytesSent += pkgInfo.payloadBytes;
+        }
+
+        p
+            //.then(x => new Promise(resolve => setTimeout(() => resolve(x), 200))) // Debug
+            .then(val => {
+                sendMessageToMain(WORKER_PREFIX, "debug", "sent: 200. For " + mediaType + "-" + seqId + "-" + timestamp + "-" + duration + "-" + chunkType + "-" + firstFrameClkms);
+                removeFromInflight(mediaType, pId);
+            })
+            .catch(err => {
+                sendMessageToMain(WORKER_PREFIX, "dropped", { clkms: Date.now(), ts: timestamp, msg: "Dropped " + mediaType + "chunk because sending chunk error" });
+                sendMessageToMain(WORKER_PREFIX, "error", "request: " + mediaType + "-" + seqId + ". Err: " + err.message);
+
+                removeFromInflight(mediaType, pId);
+            });
+        return p;
+    } catch (ex) {
+        sendMessageToMain(WORKER_PREFIX, "error", "request: " + mediaType + "-" + seqId + ". Err: " + ex.message);
     }
-    
-    p
-        //.then(x => new Promise(resolve => setTimeout(() => resolve(x), 200))) // Debug
-        .then(val => {
-            sendMessageToMain(WORKER_PREFIX, "debug", "sent: 200. For " + mediaType + "-" + seqId + "-" + timestamp + "-" + duration + "-" + chunkType + "-" + firstFrameClkms);
-            removeFromInflight(mediaType, pId);
-        })
-        .catch(err => {
-            sendMessageToMain(WORKER_PREFIX, "dropped", { clkms: Date.now(), ts: timestamp, msg: "Dropped " + mediaType + "chunk because sending chunk error" });
-            sendMessageToMain(WORKER_PREFIX, "error", "request: " + mediaType + "-" + seqId + ". Err: " + err.message);
-
-            removeFromInflight(mediaType, pId);
-        });
-    return p;
+    return null;
 }

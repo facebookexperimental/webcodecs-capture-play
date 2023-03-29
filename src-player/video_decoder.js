@@ -118,7 +118,7 @@ self.addEventListener('message', async function(e) {
         discardedBufferFull = 0;
 
         // If there is a disco, we need to wait for a new key
-        if (e.data.chunk.isDisco) {
+        if (e.data.isDisco) {
             setWaitForKeyframe(true);
         }
     

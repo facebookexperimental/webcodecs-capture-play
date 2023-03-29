@@ -42,7 +42,7 @@ function handleChunk(chunk, metadata) {
         lastAudioMetadata = metadata;
         insertMetadata = lastAudioMetadata;
     } else {
-        // Inject last received metadata every few secs following video IDR behaviour
+        // Inject last received metadata every few secs following video IDR behavior
         if (chunk_delivered_counter % INSERT_METADATA_EVERY_AUDIO_FRAMES === 0) {
             insertMetadata = lastAudioMetadata;
         }

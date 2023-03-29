@@ -259,10 +259,11 @@ Fig5: Player block diagram
 Fig6: Player block diagram
 
 # TODO
+- Encoder: Cancel QUIC stream after some reasonable time (?) in mode live
+- Encoder: Implement priorities (sendOrder when available)
 - Player: Do not use main thead for anything except reporting
 - Player: Accept different sampling frequency than the audio renderer
 - Player/server: Cancel QUIC stream if arrives after jitter buffer
-- Encoder: Cancel QUIC stream after some reasonable time
 - Accelerate playback if we are over latency budget
 - All:
   - Accept B frames (DTS)
