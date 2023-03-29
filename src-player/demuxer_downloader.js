@@ -18,7 +18,7 @@ let rewindTimeMs = 0;
 let startAtEpochMs = undefined;
 let endAtEpochMs = undefined;
 
-let quicStreamsExpirationTimeoutMs = 7000;
+let quicStreamsExpirationTimeoutMs = 10000;
 
 let videoJitterBufferMs = 200
 let audioJitterBufferMs = 200
