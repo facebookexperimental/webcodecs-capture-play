@@ -251,7 +251,11 @@ class MediaPackagerHeader {
         const firstFrameClkmsByte = this.convertToInt64BE(this.firstFrameClkms);
 
         const dataByte = this.createDataByte(this.mediaType, this.chunkType, (seqIDByte != undefined), (timestampByte != undefined), (durationByte != undefined), (firstFrameClkmsByte != undefined));
-        const totalHeaderSize = 1 + 8 + 8 + 8 + 8 + 4 + 1;
+        const totalHeaderSize = 1 + 8 + 8 + 8 + 8 + 4 + 1; //38 bytes
+        // TODO: 
+        // We could add maxAge default per track (-4), 
+        // We could add duration default per track (-8),
+        // firstFrameClkmsByte is optional (-8) 
         const headerSizeBytes = this.convertToUint64BE(totalHeaderSize);
 
         this.totalPackagerBytes = 8 + totalHeaderSize;
