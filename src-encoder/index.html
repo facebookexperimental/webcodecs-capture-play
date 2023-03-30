@@ -366,7 +366,7 @@ LICENSE file in the root directory of this source tree.
             const metadata = e.data.metadata;
             const seqId = e.data.seqId;
 
-            const itemTsClk = videoTimeChecker.GetItemByTs(chunk.timestamp, false);
+            const itemTsClk = videoTimeChecker.GetItemByTs(chunk.timestamp);
             if (itemTsClk === undefined) {
                 console.error(`Not found TS for that initial video frame, this should not happen.  ts: ${chunk.timestamp}, id:${seqId}`);
             } else {
@@ -377,7 +377,7 @@ LICENSE file in the root directory of this source tree.
             const metadata = e.data.metadata;
             const seqId = e.data.seqId;
 
-            const itemTsClk = audioTimeChecker.GetItemByTs(chunk.timestamp, false);
+            const itemTsClk = audioTimeChecker.GetItemByTs(chunk.timestamp);
             if (itemTsClk == undefined) {
                 console.error(`Not found TS for that initial audio frame, this should not happen. ts: ${chunk.timestamp}, id:${seqId}`);
             } else {
