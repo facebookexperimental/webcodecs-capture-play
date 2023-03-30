@@ -488,7 +488,7 @@ LICENSE file in the root directory of this source tree.
     }
 
     function createTimeChecker() {
-        audioTimeChecker = new TimeChecker("audio", returnWhen.LowerOrEqual);
+        audioTimeChecker = new TimeChecker("audio");
     }
     function clearTimeChecker() {
         audioTimeChecker = null;
@@ -761,7 +761,6 @@ LICENSE file in the root directory of this source tree.
                 animFrame = requestAnimationFrame(audioTimestamps);
             }
 
-            // For latency measure we need the data NOT compensated
             if (audioTimeChecker != null) {
                 const frameClosestData = audioTimeChecker.GetItemByTs(timingInfo.renderer.currentAudioTS);
                 if (frameClosestData != undefined) {
