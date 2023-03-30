@@ -60,6 +60,17 @@ LICENSE file in the root directory of this source tree.
                 <label>Expiration time for media chunks (except init) (in secs):<input id="uploadMaxAge" type="text"
                         value="120"></label>
                 <div class="clear"></div>
+                <h3>Video encoding params (h264)</h3>
+                <label>Resolution: <input id="videoEncodingWidth" type="text" value="320" size="5"><input
+                        id="videoEncodingHeight" type="text" value="180" size="5"></label>
+                <label>FrameRate:<input id="videoEncodingFrameRate" type="text" value="30" size="5"></label>
+                <label>KeyFrame every (frames):<input id="videoEncodingKeyFrameEvery" type="text" value="60"
+                        size="5"></label>
+                <label>Bitrate (bps): <input id="videoEncodingBitrateBps" type="text" value="500000" size="8"></label>
+                <div class="clear"></div>
+                <h3>Audio encoding params (opus)</h3>
+                <label>Bitrate (bps): <input id="audioEncodingBitrateBps" type="text" value="32000" size="8"></label>
+                <div class="clear"></div>
                 <button id="btnStart" type="button" onclick="start();">Start</button>
                 <button id="btnStop" type="button" onclick="stop();" disabled>Stop</button>
             </form>
@@ -94,7 +105,8 @@ LICENSE file in the root directory of this source tree.
             <h3>Packager Efficiency</h3>
             <div class="styleform">
                 <form>
-                    <label>Efficiency (%):<input id="uploadStatsPackagerEfficiency" type="text" value="" readonly size="30"></label>
+                    <label>Efficiency (%):<input id="uploadStatsPackagerEfficiency" type="text" value="" readonly
+                            size="30"></label>
                     <div class="clear"></div>
                 </form>
             </div>
@@ -356,7 +368,7 @@ LICENSE file in the root directory of this source tree.
 
             const itemTsClk = videoTimeChecker.GetItemByTs(chunk.timestamp, false);
             if (itemTsClk === undefined) {
-                console.error("Not found TS for that initial video frame, this should not happen");
+                console.error(`Not found TS for that initial video frame, this should not happen.  ts: ${chunk.timestamp}, id:${seqId}`);
             } else {
                 muxerSenderWorker.postMessage({ type: "vchunk", firstFrameClkms: itemTsClk.clkms, compesatedTs: itemTsClk.compesatedTs, estimatedDuration: itemTsClk.estimatedDuration, seqId: seqId, chunk: chunk, metadata: metadata });
             }
@@ -367,7 +379,7 @@ LICENSE file in the root directory of this source tree.
 
             const itemTsClk = audioTimeChecker.GetItemByTs(chunk.timestamp, false);
             if (itemTsClk == undefined) {
-                console.error("Not found TS for that initial audio frame, this should not happen");
+                console.error(`Not found TS for that initial audio frame, this should not happen. ts: ${chunk.timestamp}, id:${seqId}`);
             } else {
                 muxerSenderWorker.postMessage({ type: "achunk", firstFrameClkms: itemTsClk.clkms, compesatedTs: itemTsClk.compesatedTs, seqId: seqId, chunk: chunk, metadata: metadata });
             }
@@ -390,7 +402,7 @@ LICENSE file in the root directory of this source tree.
         const effAudio = ((packagerEfficiencyData.audio.totalPayloadBytesSent / (packagerEfficiencyData.audio.totalPackagerBytesSent + packagerEfficiencyData.audio.totalPayloadBytesSent)) * 100).toFixed(2);
         const effTotal = (((packagerEfficiencyData.video.totalPayloadBytesSent + packagerEfficiencyData.audio.totalPayloadBytesSent) / (packagerEfficiencyData.video.totalPackagerBytesSent + packagerEfficiencyData.audio.totalPackagerBytesSent + packagerEfficiencyData.video.totalPayloadBytesSent + packagerEfficiencyData.audio.totalPayloadBytesSent)) * 100).toFixed(2);
         const effStr = `${effTotal} (v: ${effVideo}, a: ${effAudio})`;
-        document.getElementById('uploadStatsPackagerEfficiency').value =effStr;
+        document.getElementById('uploadStatsPackagerEfficiency').value = effStr;
     }
 
     function updateDroppedFrame(droppedFrameData) {
@@ -457,6 +469,16 @@ LICENSE file in the root directory of this source tree.
 
         createWorkers();
 
+        // Load video encoding settings
+        videoEncoderConfig.encoderConfig.width = parseInt(document.getElementById('videoEncodingWidth').value);
+        videoEncoderConfig.encoderConfig.height = parseInt(document.getElementById('videoEncodingHeight').value);
+        videoEncoderConfig.encoderConfig.framerate =parseInt( document.getElementById('videoEncodingFrameRate').value);
+        videoEncoderConfig.encoderConfig.bitrate = parseInt(document.getElementById('videoEncodingBitrateBps').value);
+        videoEncoderConfig.keyframeEvery = parseInt(document.getElementById('videoEncodingKeyFrameEvery').value);
+
+        // Load audio encoding settings
+        audioEncoderConfig.encoderConfig.bitrate = parseInt(document.getElementById('audioEncodingBitrateBps').value);
+
         var constraints = { audio: true, video: { width: 1280, height: 720 } };
 
         // Get a MediaStream from the webcam.
@@ -501,7 +523,7 @@ LICENSE file in the root directory of this source tree.
                 muxerSenderConfig.urlHostPort = document.getElementById('wtServerUrl').value;
                 muxerSenderConfig.urlPath = document.getElementById('uploadId').value;
                 muxerSenderConfig.packagerVersion = document.getElementById('packagerType').value;
-                
+
                 // Get Max-age data
                 muxerSenderConfig.maxAgeChunkS = parseInt(document.getElementById('uploadMaxAge').value);
                 //Get max Inflight requests

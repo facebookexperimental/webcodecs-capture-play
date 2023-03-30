@@ -179,7 +179,7 @@ function fetchWebTransportWithTimeout(stream, timeoutMs) {
                 return resolve(value);
             })
             .catch(err => {
-                return resolve(err);
+                return reject(err);
             });
     });
 }

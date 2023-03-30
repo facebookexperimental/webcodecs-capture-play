@@ -73,8 +73,12 @@ LICENSE file in the root directory of this source tree.
                     </select>
                 </label>
                 <div class="clear"></div>
-                <label>Player buffer (ms):<input id="playerBufferMs" type="text" value="100"></label>
+                <label>Min audio player buffer (ms):<input id="playerBufferMs" type="text" value="100"></label>
                 <label>(it waits until audio buffers this amount to start playback)</label>
+                <div class="clear"></div>
+                <label>Max audio player buffer (ms):<input id="playerMaxBufferMs" type="text" value="300"></label>
+                <label>(this + jitter is the max latency allowed)</label>
+                <div class="clear"></div>
                 <div class="clear"></div>
                 <label>Audio jitter buffer buffer for this player (ms):<input id="audioJitterBufferMs" type="text"
                         value="200"></label>
@@ -210,9 +214,6 @@ LICENSE file in the root directory of this source tree.
     // Main vars
     const VERBOSE = true;
 
-    // Minimum size in ms of audio circular buffer shared between main thread and audio renderer
-    const SHARED_CIRCULAR_BUFFER_MIN_MS = 5000;
-
     const downloaderConfig = {
         // Rewind
         rewindTimeMs: 0, // We will request EDGE - this value
@@ -230,6 +231,9 @@ LICENSE file in the root directory of this source tree.
 
     // We will start playback when this amount of data is in the audio rendered buffer
     let playerBufferMs = 100;
+
+    // This + jitter is the max latency allowed
+    let playerMaxBufferMs = 300;
 
     // Current workers
     let muxerDownloaderWorker = null;
@@ -330,6 +334,7 @@ LICENSE file in the root directory of this source tree.
 
         if (newSelected == "Rewind") {
             document.getElementById('playerBufferMs').value = 500;
+            document.getElementById('playerMaxBufferMs').value = 5000;
             document.getElementById('videoJitterBufferMs').value = 3000;
             document.getElementById('audioJitterBufferMs').value = 4000;
             document.getElementById('rewindTimeMsLabel').hidden = false;
@@ -337,6 +342,7 @@ LICENSE file in the root directory of this source tree.
         } else if (newSelected == "VOD") {
             // Highlight
             document.getElementById('playerBufferMs').value = 500;
+            document.getElementById('playerMaxBufferMs').value = 5000;
             document.getElementById('videoJitterBufferMs').value = 3000;
             document.getElementById('audioJitterBufferMs').value = 4000;
 
@@ -347,6 +353,7 @@ LICENSE file in the root directory of this source tree.
         } else {
             // Edge
             document.getElementById('playerBufferMs').value = 100;
+            document.getElementById('playerMaxBufferMs').value = 300;
             document.getElementById('videoJitterBufferMs').value = 100;
             document.getElementById('audioJitterBufferMs').value = 200;
         }
@@ -357,6 +364,7 @@ LICENSE file in the root directory of this source tree.
         document.getElementById("btnStop").disabled = false;
 
         playerBufferMs = document.getElementById('playerBufferMs').value;
+        playerMaxBufferMs = document.getElementById('playerMaxBufferMs').value;
 
         createVideoRendererBuffer();
 
@@ -735,8 +743,8 @@ LICENSE file in the root directory of this source tree.
 
             // If audioSharedBuffer not initialized and is in start (render) state -> Initialize
             if (audioSharedBuffer === null && audioCtx != null) {
-                buffersInfo.renderer.audio.sizeMs = Math.max(SHARED_CIRCULAR_BUFFER_MIN_MS, playerBufferMs * 3)
-                const bufferSizeSamples = Math.floor(buffersInfo.renderer.audio.sizeMs / 1000) * aFrame.sampleRate;
+                buffersInfo.renderer.audio.sizeMs = Math.max(playerMaxBufferMs, playerBufferMs * 2, 100);
+                const bufferSizeSamples = Math.floor((buffersInfo.renderer.audio.sizeMs * aFrame.sampleRate) / 1000);
 
                 audioSharedBuffer = new CicularAudioSharedBuffer();
                 audioSharedBuffer.Init(aFrame.numberOfChannels, bufferSizeSamples, audioCtx.sampleRate);
@@ -751,6 +759,15 @@ LICENSE file in the root directory of this source tree.
 
             if (animFrame === null) {
                 animFrame = requestAnimationFrame(audioTimestamps);
+            }
+
+            // For latency measure we need the data NOT compensated
+            if (audioTimeChecker != null) {
+                const frameClosestData = audioTimeChecker.GetItemByTs(timingInfo.renderer.currentAudioTS);
+                if (frameClosestData != undefined) {
+                    const currentLatencyMs = systemAudioLatencyMs + (Date.now() - frameClosestData.clkms);
+                    updateLatencyUI(currentLatencyMs);
+                }
             }
         } else if (e.data.type === "vframe") {
             const vFrame = e.data.frame;
@@ -867,15 +884,6 @@ LICENSE file in the root directory of this source tree.
                 }
 
                 updateRendererVideoUI(timingInfo.renderer.currentVideoTS, buffersInfo.renderer.video, retData.totalDiscarded);
-            }
-
-            // For latency measure we need the data NOT compensated
-            if (audioTimeChecker != null) {
-                const frameClosestData = audioTimeChecker.GetItemByTs(timingInfo.renderer.currentAudioTS);
-                if (frameClosestData != undefined) {
-                    const currentLatencyMs = systemAudioLatencyMs + (Date.now() - frameClosestData.clkms);
-                    updateLatencyUI(currentLatencyMs);
-                }
             }
         }
         animFrame = requestAnimationFrame(audioTimestamps);
