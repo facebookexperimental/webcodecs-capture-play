@@ -1,4 +1,5 @@
 # webcodecs-capture-play
+
 This project is provides a minimal implementation (inside the browser) of a live video and audio encoder and video / audio player. The goal is to provide a minimal live platform implementation that helps learning low latency trade offs, and facilitates low latency experimentation.
 
 We also used it to start experimenting in media over QUIC transport (learn more about it in [moq IETF workgroup](https://datatracker.ietf.org/doc/charter-ietf-moq/))
@@ -11,7 +12,8 @@ For the server/relay side we have used [go-media-webtransport-server](https://gi
 ## Packager
 
 ### V2 Binary (legacy)
-This is a more refined packager than v1, it keeps same functionality bit is more optimal in terms of efficiency and also keeping a good trade off with flexibility. 
+
+This is a more refined packager than v1, it keeps same functionality bit is more optimal in terms of efficiency and also keeping a good trade off with flexibility.
 
 The efficiency of this packager is ~91%, meaning 91% of the bytes sent to transport are payload bytes (1Mbps video and 32Kbps audio)
 
@@ -19,6 +21,7 @@ The efficiency of this packager is ~91%, meaning 91% of the bytes sent to transp
 Fig2.1: Media packager v2
 
 ### V1 JSON (legacy)
+
 We use a very experimental, flexible, and NON optimal packager that we created for specifically for this, see fig2.2
 
 The efficiency of this packager is ~70%, meaning 70% of the bytes sent to transport are payload bytes (1Mbps video and 32Kbps audio)
@@ -27,6 +30,7 @@ The efficiency of this packager is ~70%, meaning 70% of the bytes sent to transp
 Fig2.2: Media packager v1
 
 ## Encoder
+
 The encoder is based on [Webcodecs](https://developer.mozilla.org/en-US/docs/Web/API/WebCodecs_API), and [AudioContext](https://developer.mozilla.org/en-US/docs/Web/API/AudioContext), see the block diagram in fig3
 
 ![Encoder block diagram](./pics/WebCodecs-Encoder-block-diagram.png)
@@ -34,9 +38,11 @@ Fig3: Encoder block diagram
 
 Note: We have used [WebTransport](https://www.w3.org/TR/webtransport/), so the underlying transport is QUIC, QUIC streams to be more accurate
 
-### Config params
+### Encoder - Config params
+
 Video encoding config:
-```
+
+```javascript
 // Video encoder config
 const videoEncoderConfig = {
   encoderConfig: {
@@ -53,7 +59,8 @@ const videoEncoderConfig = {
 ```
 
 Audio encoder config:
-```
+
+```javascript
 // Audio encoder config
 const audioEncoderConfig = {
   encoderConfig: {
@@ -67,7 +74,8 @@ const audioEncoderConfig = {
 ```
 
 Muxer config:
-```
+
+```javascript
 const muxerSenderConfig = {
   audioMaxMaxQueueSizeMs: 200,
   videoMaxMaxQueueSizeMs: 100,
@@ -83,6 +91,7 @@ const muxerSenderConfig = {
 ```
 
 ### src_encoder/index.html
+
 Main encoder webpage and also glues all encoder pieces together
 
 - When it receives an audio OR video raw frame from `a_capture` or `v_capture`:
@@ -94,16 +103,21 @@ Main encoder webpage and also glues all encoder pieces together
   - Sends the chunk (augmented with wall clock, seqId, and metadata) to the muxer
 
 ### utils/TimeChecker
+
 Stores the frames timestamps and the wall clock generation time from the raw generated frames. That allows us keep track of each frame / chunk creation time (wall clock)
 
 ### src_encoder/v_capture.js
+
 [WebWorker](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API) that waits for the next RGB or YUV video frame from capture device,  augments it adding wallclock, and sends it via post message to video encoder
 
 ### src_encoder/a_capture.js
+
 [WebWorker](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API) Receives the audio PCM frame (few ms, ~10ms to 25ms of audio samples) from capture device, augments it adding wallclock, and finally send it (doing copy) via post message to audio encoder
 
 ### src_encoder/v_encoder.js
+
 [WebWorker](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API) Encodes RGB or YUV video frames into encoded video chunks
+
 - configures the `VideoEncoder` in `realtime` latency mode, so it delivers a chunk per video frame
 - Receives the video RGB or YUV frame from `v_capture.js`
 - Adds the video frame to a queue. And it keeps teh queue smaller than `encodeQueueSize`. It helps when encoder is overwhelmed
@@ -111,14 +125,18 @@ Stores the frames timestamps and the wall clock generation time from the raw gen
 - It receives a chunk and delivers it to the next stage (muxer)
 
 ### src_encoder/a_encoder.js
+
 [WebWorker](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API) Encodes PCM audio frames (samples) into encoded audio chunks
+
 - Configures the `AudioEncoder`, it delivers a chunk per audio frame
 - Receives the audio PCM frame from a_capture.js
 - Adds the audio frame to a queue. And it keeps the queue smaller than `encodeQueueSize`. It helps when encoder is overwhelmed
 - It receives the chunk and delivers it to the next stage (muxer)
 
 ### src_encoder/muxer_sender.js
+
 [WebWorker](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API) Sends audio and video chunks to the server / relay
+
 - Opens a WebTransport session against the server
 - Creates a Unidirectional (encoder -> server) QUIC stream per every frame
 - Receives audio and video chunks from `a_encoder.js` and `v_encoder.js`
@@ -128,7 +146,8 @@ Stores the frames timestamps and the wall clock generation time from the raw gen
 - It continuously send audio and video chunk, audio is always sent first if there are any in the audio queue. In other words it only sends video when **audio sending queue is empty**
 - It keeps number of inflight requests always below configured value `maxInFlightRequest`
 - When sending chunks adds the following metadata as inside header fields:
-```
+
+```javascript
 'Cache-Control': max-age=AA`, // Indicates server to cache this data for AA seconds (except init segments)
 'Joc-Media-Type': mediaType, // audio, video, or data
 'Joc-Timestamp': timestamp, // Chunk PTS in nanoseconds
@@ -140,6 +159,7 @@ Stores the frames timestamps and the wall clock generation time from the raw gen
 ```
 
 ## Player
+
 The player uses [Webcodecs](https://developer.mozilla.org/en-US/docs/Web/API/WebCodecs_API) and [AudioContext](https://developer.mozilla.org/en-US/docs/Web/API/AudioContext) / [Worklet](https://developer.mozilla.org/en-US/docs/Web/API/Worklet), [SharedArrayBuffer](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/SharedArrayBuffer), and [Atomic](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Atomics)
 
 Note: We have used [WebTransport](https://www.w3.org/TR/webtransport/), so the underlying transport is QUIC, quicStreams to be more accurate
@@ -148,16 +168,19 @@ Note: We have used [WebTransport](https://www.w3.org/TR/webtransport/), so the u
 Fig4: Player block diagram
 
 ### Audio video sync strategy
+
 To keep the audio and video in-sync, following strategy is applied:
-- Audio renderer (`audio_circular_buffer.js`) keeps track of last played timestamp (delivered to audio device by `source_buffer_worklet.js`) by using PTS value in the current playing `AudioData` frame and adding the duration of the number of samples delivered. This information is accessible from player page via `timingInfo.renderer.currentAudioTS`, who also adds the hardware latency provided by `AudioContext`. 
+
+- Audio renderer (`audio_circular_buffer.js`) keeps track of last played timestamp (delivered to audio device by `source_buffer_worklet.js`) by using PTS value in the current playing `AudioData` frame and adding the duration of the number of samples delivered. This information is accessible from player page via `timingInfo.renderer.currentAudioTS`, who also adds the hardware latency provided by `AudioContext`.
 - Every time we sent new audio samples to audio renderer the video renderer `video_render_buffer` (who contains YUV/RGB frames + timestamps) gets called and:
   - Returns / paints the oldest closest (or equal) frame to current audio ts (`timingInfo.renderer.currentAudioTS`)
   - Discards (frees) all frames older current ts (except the returned one)
-- It is worth saying that `AudioDecoder` does NOT track timestamps, it just uses the 1st one sent and at every decoded audio sample adds 1/fs (so sample time). That means if we drop and audio packet those timestamps will be collapsed creating A/V out of sync. To workaround that problem we calculate all the audio GAPs duration `timestampOffset` (by last playedTS - newTS, ideally = 0 if NO gaps), and we compensate the issued PTS by that. 
-
+- It is worth saying that `AudioDecoder` does NOT track timestamps, it just uses the 1st one sent and at every decoded audio sample adds 1/fs (so sample time). That means if we drop and audio packet those timestamps will be collapsed creating A/V out of sync. To workaround that problem we calculate all the audio GAPs duration `timestampOffset` (by last playedTS - newTS, ideally = 0 if NO gaps), and we compensate the issued PTS by that.
 
 ### src-player/demuxer_downloader.js
-[WebWorker](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API) 
+
+[WebWorker](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API)
+
 - Opens webtransport session, sending following params as querystring:
   - `old_ms`: Time from live edge to start sending (0 = live edge)
   - `vj_ms`: Video jitter size in ms
@@ -170,7 +193,9 @@ To keep the audio and video in-sync, following strategy is applied:
   - Audio: Create `EncodedAudioChunk`
 
 ### src-player/jitter_buffer.js
+
 Since we do not have any guarantee that QUIC streams are delivered in order we need to order them before sending them to the decoder. This is the function of the deJitter. We create one instance per track, in this case one for Audio, one for video video
+
 - Receives the chunks from `demuxer_downloader.js`
 - Adds them into a sorted list, we sort by ascending `seqID`
 - When list length (in ms is > `bufferSizeMs`) we deliver (remove) the 1st element in the list
@@ -179,9 +204,11 @@ Since we do not have any guarantee that QUIC streams are delivered in order we n
   - Total QUIC Stream lost (not arrived in time)
 
 ### src-player/audio_decoder.js
+
 [WebWorker](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API) when it receives and audio chunk it decodes it and it sends the audio PCM samples to the audio renderer.
-`AudioDecoder` does NOT track timestamps on decoded data, it just uses the 1st one sent and at every decoded audio sample adds 1/fs (so sample time). That means if we drop and audio packet those timestamps will be collapsed creating A/V out of sync. 
+`AudioDecoder` does NOT track timestamps on decoded data, it just uses the 1st one sent and at every decoded audio sample adds 1/fs (so sample time). That means if we drop and audio packet those timestamps will be collapsed creating A/V out of sync.
 To workaround that problem we calculate all the audio GAPs duration `timestampOffset` and we publish that to allow other elements in the pipeline to have accurate idea of live head position
+
 - Receives audio chunk
   - If discontinuity detected (reported by jitter_buffer.js) then calculate lost time by:
     - `lostTime = currentChunkTimestamp - lastChunkSentTimestamp;` Where `lastChunkSentTimestamp = lastSentChunk.timestamp + lastSentChunk.duration`
@@ -189,39 +216,49 @@ To workaround that problem we calculate all the audio GAPs duration `timestampOf
 - Decode chunk and deliver PCM data + `timestampOffset`
 
 ### src-player/audio_circular_buffer.js
+
 Leverages [SharedArrayBuffer](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/SharedArrayBuffer) and [Atomic](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Atomics) to implement following mechanisms to share data in a "multi thread" environment:
+
 - Circular buffer (`sharedAudiobuffers`): Main buffer used to share audio PCM data from decoder to renderer `source_buffer_worklet.js`
 - State communication (`sharedStates`): Use to share states and data between renderer `source_buffer_worklet.js` and main thread
 
 ### src-player/source_buffer_worklet.js
+
 [AudioWorkletProcessor](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API), implements an audio source Worklet that sends audio samples to renderer.
+
 - It reads new audio samples from circular buffer
 - The samples are played at sampling freq rate
   - In case the buffer is exhausted (underrun) it will insert silence samples and notify play timing according to that.
 - Reports last PTS rendered (this is used to keep A/V in sync)
 
 ### src-player/video_decoder.js
+
 [WebWorker](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API), Decodes video chunks and sends the decoded data (YUV or RGB) to the next stage (`video_render_buffer.js`)
+
 - Initializes video decoder with init segment
 - Sends video chunks to video decoder
   - If it detects a discontinuity drops all video frames until next IDR frame
 - Sends the decoded frame to `video_render_buffer.js`
 
 ### src-player/video_render_buffer.js
+
 Buffer that stores video decoded frames
+
 - Received video decoded frames
 - Allows the retrieval of video decoded frames via timestamps
   - Automatically drops all video frames with smaller timestamps than the requested one
 
 ### Latency measurement
-- Every audio received chunk `timestamp` and `clkms` (wall clock) is added into `audioTimeChecker` queue (instance of `TimeChecker`) 
+
+- Every audio received chunk `timestamp` and `clkms` (wall clock) is added into `audioTimeChecker` queue (instance of `TimeChecker`)
 - The `renderer.currentAudioTS` (current audio sample rendered) is used to get the closest wall clock time from `audioTimeChecker`
 - The UI displays: `Latency = Now - renderedSampleGeneratedWallClock and that is displayed in the UI
 
 Note: Encoder and Player clock have to be in sync for this metric to be accurate. You can use same computer as encoder & player, then metric should be pretty accurate
 
-### Config params
-```
+### Player - Config params
+
+```javascript
 const downloaderConfig = {
     targetBufferS: 1, // Target player buffer size, we will request EDGE - this value
 
@@ -230,15 +267,19 @@ const downloaderConfig = {
 }
 ```
 
-# Testing
+## Testing
+
 - Follow the installation instructions of [go-media-webtransport-server](https://github.com/jordicenzano/go-media-webtransport-server)
 - Clone this repo
-```
+
+```bash
 git clone git@github.com:jordicenzano/webcodecs-capture-play.git
 ```
+
 - Install phyton (see this [guide](https://realpython.com/installing-python/))
 - Run local webserver by calling:
-```
+
+```bash
 ./start-http-server-cross-origin-isolated.py 
 ```
 
@@ -258,7 +299,8 @@ Fig5: Player block diagram
 ![Player UI](./pics/player-UI.png)
 Fig6: Player block diagram
 
-# TODO
+## TODO
+
 - Encoder: Cancel QUIC stream after some reasonable time (?) in mode live
 - Encoder: Implement priorities (sendOrder when available)
 - Player: Do not use main thead for anything except reporting
@@ -270,5 +312,6 @@ Fig6: Player block diagram
   - Accept multi track
 - TODO:???
 
-# License
+## License
+
 webcodecs-capture-play is released under the [MIT License](https://github.com/facebookincubator/rush/blob/master/LICENSE).
