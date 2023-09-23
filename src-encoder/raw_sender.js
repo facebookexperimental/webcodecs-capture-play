@@ -5,11 +5,11 @@ This source code is licensed under the MIT license found in the
 LICENSE file in the root directory of this source tree.
 */
 
-const WORKER_PREFIX = "[MUXER-SEND]";
+const WORKER_PREFIX = "[RAW-SENDER]";
 
 importScripts('utils.js');
+importScripts('muxer.js');
 importScripts('../utils/packager_version.js');
-importScripts('../packager/media_packager_header.js');
 
 let chunks_delivered = 0;
 let workerState = StateEnum.Created;
@@ -41,20 +41,14 @@ let packagerVersion = PackagerVersion.V2Binary;
 // Packager efficiency
 let efficiencyData = {
     audio: {
-        totalPackagerBytesSent: 0,
-        totalPayloadBytesSent: 0,
+        totalPackagerBytes: 0,
+        totalPayloadBytes: 0,
     },
     video: {
-        totalPackagerBytesSent: 0,
-        totalPayloadBytesSent: 0,
+        totalPackagerBytes: 0,
+        totalPayloadBytes: 0,
     }
 }
-
-// Debugging data 
-/*let totalAudioSkippedDur = 0;
-let totalVideoSkippedDur = 0;
-let numAudioFramesDropped = 0;
-let numVideoFramesDropped = 0;*/
 
 self.addEventListener('message', async function (e) {
     if (workerState === StateEnum.Created) {
@@ -179,34 +173,68 @@ function getAllInflightRequestsArray() {
 
 function createRequests(chunkData, packagerVersion) {
     const ret = [];
-    const mediaType = chunkData.mediaType;
-    const seqId = chunkData.seqId;
-    const maxAgeChunkS = chunkData.maxAgeChunkS;
-    const chunk = chunkData.chunk;
-    const metadata = chunkData.metadata;
-    const firstFrameClkms = chunkData.firstFrameClkms;
-    const compesatedTs = chunkData.compesatedTs;
-    const estimatedDuration = (chunkData.estimatedDuration === undefined) ? chunk.duration : chunkData.estimatedDuration;
+    const packets = chunkDataToPackager(chunkData)
+    packets.forEach(packet => {
+        const p = createSendPromise(packet, packagerVersion);
+        if (p != null) {
+            ret.push(p);
+        }
 
-    // Decoder needs to be configured (or reconfigured) with new parameters
-    // when metadata has a new decoderConfig.
-    // Usually it happens in the beginning or when the encoder has a new
-    // codec specific binary configuration. (VideoDecoderConfig.description).
-    if (metadata != undefined) {
-        let pIni = null;
-        pIni = createWebTransportRequestPromise(firstFrameClkms, mediaType, "init", compesatedTs, estimatedDuration, -1, Number.MAX_SAFE_INTEGER, metadata, packagerVersion);
-        ret.push(pIni);
+    });
+    return ret;
+}
+
+async function createSendPromise(packet, packagerVersion) {
+    if (wTtransport === null) {
+        sendMessageToMain(WORKER_PREFIX, "dropped", { clkms: Date.now(), ts: timestamp, msg: "Dropped " + mediaType + "chunk because server error response" });
+        sendMessageToMain(WORKER_PREFIX, "error", "request not send because transport is NOT open. For " + mediaType + "-" + seqId);
+        return null;
     }
 
-    // actual bytes of encoded data
-    const chunkDataBuffer = new Uint8Array(chunk.byteLength);
-    chunk.copyTo(chunkDataBuffer);
+    let uniWriter = null;
+    const p = wTtransport.createUnidirectionalStream()
+        .then(function (uniStream) {
+            uniWriter = uniStream.getWriter();
+            return uniWriter.ready;
+        })
+        .then(function () {
+            const buf = packet.ToBytes(packagerVersion);
 
-    let pChunk = null;
-    pChunk = createWebTransportRequestPromise(firstFrameClkms, mediaType, chunk.type, compesatedTs, estimatedDuration, seqId, maxAgeChunkS, chunkDataBuffer, packagerVersion);
-    ret.push(pChunk);
+            // Calculate efficiency avg accumulatively
+            const pkgInfo = packet.GetPackagerInfo();
 
-    return ret;
+            if (packet.GetData().mediaType == "video") {
+                efficiencyData.video.totalPackagerBytes += pkgInfo.packagerBytes;
+                efficiencyData.video.totalPayloadBytes += pkgInfo.payloadBytes;
+            } else if (packet.GetData().mediaType == "audio") {
+                efficiencyData.audio.totalPackagerBytes += pkgInfo.packagerBytes;
+                efficiencyData.audio.totalPayloadBytes += pkgInfo.payloadBytes;
+            }
+
+            return uniWriter.write(buf);
+        })
+        .then(function () {
+            return uniWriter.ready;
+        })
+        .then(function () {
+            return uniWriter.close();
+        })
+        .then(function () {
+            // OK
+            sendMessageToMain(WORKER_PREFIX, "debug", "sent: 200. For " + packet.GetDataStr());
+        }).catch(function (e) {
+            // ERR
+            sendMessageToMain(WORKER_PREFIX, "dropped", { clkms: Date.now(), ts: packet.GetData().timestamp, msg: `Dropped chunk because sending chunk error, data: ${packet.GetDataStr()}` });
+            sendMessageToMain(WORKER_PREFIX, "error", "request: " + packet.GetDataStr() + ". Err: " + e.message);
+        })
+        .finally(() => {
+            removeFromInflight(packet.GetData().mediaType, packet.GetData().pId);
+        });
+    
+    p.id = packet.GetData().pId
+    addToInflight(packet.GetData().mediaType, p);
+
+    return p;
 }
 
 function addToInflight(mediaType, p) {
@@ -239,75 +267,4 @@ async function createWebTransportSession(url) {
         .catch(error => {
             sendMessageToMain(WORKER_PREFIX, "error", "WT error, closed transport. Err: " + error);
         });
-}
-
-async function createWebTransportRequestPromise(firstFrameClkms, mediaType, chunkType, timestamp, duration, seqId, maxAgeChunkS, dataBytes, packagerVersion) {
-    if (wTtransport === null) {
-        sendMessageToMain(WORKER_PREFIX, "dropped", { clkms: Date.now(), ts: timestamp, msg: "Dropped " + mediaType + "chunk because server error response" });
-        sendMessageToMain(WORKER_PREFIX, "error", "request not send because transport is NOT open. For " + mediaType + "-" + seqId);
-        return;
-    }
-
-    // Comment this. Useful to test A.V sync functionality in server & player
-
-    //if (mediaType === "audio" && seqId > 0 && seqId%20 === 0) {
-    /*if (mediaType === "audio" && seqId > 0 && seqId > 100 && seqId < 120) {
-        totalAudioSkippedDur += duration;
-        numAudioFramesDropped++;
-        console.log("JOC dropped audio seqId: " + seqId + ", totalAudioSkippedDur: " + totalAudioSkippedDur + ", numAudioFramesDropped: " + numAudioFramesDropped);
-        return;
-    }/*
-    if (mediaType === "video" && seqId > 0 && seqId%100 === 0) {
-        totalVideoSkippedDur += duration;
-        numVideoFramesDropped++;
-        console.log("JOC dropped video seqId: " + seqId + ", totalVideoSkippedDur: " + totalVideoSkippedDur + ", numVideoFramesDropped: " + numVideoFramesDropped);
-        return;
-    }*/
-
-    // Generate a unique id in the stream
-    try {
-        const pId = btoa(`${mediaType}-${seqId}-${timestamp}- ${Math.floor(Math.random * 100000)}`);
-        const packager = new MediaPackagerHeader();
-        packager.SetData(maxAgeChunkS, mediaType, timestamp, duration, chunkType, seqId, firstFrameClkms, pId, dataBytes);
-
-        // Create client-initiated uni stream & writer
-        const uniStream = await wTtransport.createUnidirectionalStream();
-        const uniWriter = uniStream.getWriter();
-        await uniWriter.ready;
-
-        uniWriter.write(packager.ToBytes(packagerVersion));
-
-        const p = uniWriter.close();
-        p.id = pId;
-
-        addToInflight(mediaType, p);
-
-        // Calculate efficiency avg accumulatively
-        const pkgInfo = packager.GetPackagerInfo();
-
-        if (mediaType == "video") {
-            efficiencyData.video.totalPackagerBytesSent += pkgInfo.packagerBytes;
-            efficiencyData.video.totalPayloadBytesSent += pkgInfo.payloadBytes;
-        } else if (mediaType == "audio") {
-            efficiencyData.audio.totalPackagerBytesSent += pkgInfo.packagerBytes;
-            efficiencyData.audio.totalPayloadBytesSent += pkgInfo.payloadBytes;
-        }
-
-        p
-            //.then(x => new Promise(resolve => setTimeout(() => resolve(x), 200))) // Debug
-            .then(val => {
-                sendMessageToMain(WORKER_PREFIX, "debug", "sent: 200. For " + mediaType + "-" + seqId + "-" + timestamp + "-" + duration + "-" + chunkType + "-" + firstFrameClkms);
-                removeFromInflight(mediaType, pId);
-            })
-            .catch(err => {
-                sendMessageToMain(WORKER_PREFIX, "dropped", { clkms: Date.now(), ts: timestamp, msg: "Dropped " + mediaType + "chunk because sending chunk error" });
-                sendMessageToMain(WORKER_PREFIX, "error", "request: " + mediaType + "-" + seqId + ". Err: " + err.message);
-
-                removeFromInflight(mediaType, pId);
-            });
-        return p;
-    } catch (ex) {
-        sendMessageToMain(WORKER_PREFIX, "error", "request: " + mediaType + "-" + seqId + ". Err: " + ex.message);
-    }
-    return null;
 }

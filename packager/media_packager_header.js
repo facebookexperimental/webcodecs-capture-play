@@ -22,7 +22,9 @@ class MediaPackagerHeader {
         this.totalPackagerBytes = 0;
     }
 
-    SetData(maxAgeS, mediaType, timestamp, duration, chunkType, seqId, firstFrameClkms, pId, data) {
+    SetData(maxAgeS, mediaType, timestamp, duration, chunkType, seqId, firstFrameClkms, data) {
+        const pId = btoa(`${mediaType}-${timestamp}-${chunkType}-${seqId}-${Math.floor(Math.random * 100000)}`);
+
         this.maxAgeS = maxAgeS;
         this.mediaType = mediaType;
         this.timestamp = timestamp;
@@ -46,6 +48,10 @@ class MediaPackagerHeader {
             pId: this.pId,
             data: this.data
         }
+    }
+
+    GetDataStr() {
+        return this.mediaType + "-" + this.seqId + "-" + this.timestamp + "-" + this.duration + "-" + this.chunkType + "-" + this.firstFrameClkms
     }
 
     SetDataFromBytes(bytes) {

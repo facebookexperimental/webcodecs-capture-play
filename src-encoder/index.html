@@ -232,7 +232,7 @@ LICENSE file in the root directory of this source tree.
         aEncoderWorker = new Worker("a_encoder.js");
 
         // Create send worker
-        muxerSenderWorker = new Worker("muxer_sender.js");
+        muxerSenderWorker = new Worker("raw_sender.js");
     }
 
     function clearUI() {
@@ -398,9 +398,9 @@ LICENSE file in the root directory of this source tree.
         document.getElementById('uploadStatsAudioInflight').value = `${inFlightAudioReqNum} (${returnMax('inFlightAudioReqNum', inFlightAudioReqNum)})`;
         document.getElementById('uploadStatsVideoInflight').value = `${inFlightVideoReqNum} (${returnMax('inFlightVideoReqNum', inFlightVideoReqNum)})`;
 
-        const effVideo = ((packagerEfficiencyData.video.totalPayloadBytesSent / (packagerEfficiencyData.video.totalPackagerBytesSent + packagerEfficiencyData.video.totalPayloadBytesSent)) * 100).toFixed(2);
-        const effAudio = ((packagerEfficiencyData.audio.totalPayloadBytesSent / (packagerEfficiencyData.audio.totalPackagerBytesSent + packagerEfficiencyData.audio.totalPayloadBytesSent)) * 100).toFixed(2);
-        const effTotal = (((packagerEfficiencyData.video.totalPayloadBytesSent + packagerEfficiencyData.audio.totalPayloadBytesSent) / (packagerEfficiencyData.video.totalPackagerBytesSent + packagerEfficiencyData.audio.totalPackagerBytesSent + packagerEfficiencyData.video.totalPayloadBytesSent + packagerEfficiencyData.audio.totalPayloadBytesSent)) * 100).toFixed(2);
+        const effVideo = ((packagerEfficiencyData.video.totalPayloadBytes / (packagerEfficiencyData.video.totalPackagerBytes + packagerEfficiencyData.video.totalPayloadBytes)) * 100).toFixed(2);
+        const effAudio = ((packagerEfficiencyData.audio.totalPayloadBytes / (packagerEfficiencyData.audio.totalPackagerBytes + packagerEfficiencyData.audio.totalPayloadBytes)) * 100).toFixed(2);
+        const effTotal = (((packagerEfficiencyData.video.totalPayloadBytes + packagerEfficiencyData.audio.totalPayloadBytes) / (packagerEfficiencyData.video.totalPackagerBytes + packagerEfficiencyData.audio.totalPackagerBytes + packagerEfficiencyData.video.totalPayloadBytes + packagerEfficiencyData.audio.totalPayloadBytes)) * 100).toFixed(2);
         const effStr = `${effTotal} (v: ${effVideo}, a: ${effAudio})`;
         document.getElementById('uploadStatsPackagerEfficiency').value = effStr;
     }
