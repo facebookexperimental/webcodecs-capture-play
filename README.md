@@ -1,3 +1,5 @@
+This repo is NO longer manteined, it will be superseeded by [moq-encoder-player](https://github.com/facebookexperimental/moq-encoder-player)
+
 # webcodecs-capture-play
 
 This project is provides a minimal implementation (inside the browser) of a live video and audio encoder and video / audio player. The goal is to provide a minimal live platform implementation that helps learning low latency trade offs, and facilitates low latency experimentation.
